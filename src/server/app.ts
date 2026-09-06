@@ -1,5 +1,6 @@
 import express from 'express';
 import * as dbQueries from '../db/queries.ts';
+import { pool } from '../db/index.ts';
 
 const app = express();
 
@@ -18,23 +19,29 @@ let initializedPromise: Promise<void> | null = null;
 app.use(async (req, res, next) => {
   if (!initializedPromise) {
     initializedPromise = dbQueries.ensureSchemaInitialized().catch((e) => {
-      console.error('Failed to auto-init schema:', e);
+      console.warn('[Server] Schema auto-init notice:', e?.message || e);
     });
   }
-  await initializedPromise;
   next();
 });
 
 function formatDbError(err: any): string {
-  const causeMsg = err?.cause?.message || (typeof err?.cause === 'string' ? err.cause : '');
-  const detail = err?.detail || err?.cause?.detail || '';
+  const cause = err?.cause;
+  const causeMsg = cause?.message || (typeof cause === 'string' ? cause : '');
+  const detail = err?.detail || cause?.detail || '';
   const full = `${err?.message || ''} ${causeMsg} ${detail}`.toLowerCase();
 
   if (full.includes('relation') && full.includes('does not exist')) {
     return 'Database tables not found. Please execute schema.sql in your Supabase SQL Editor.';
   }
-  if (full.includes('connection') || full.includes('econnrefused') || full.includes('timeout') || full.includes('password authentication failed') || full.includes('no pg_hba.conf')) {
-    return `Database connection failed: ${causeMsg || err.message}. Please verify DATABASE_URL in Vercel.`;
+  if (full.includes('econnrefused')) {
+    return 'Database connection refused. Please ensure DATABASE_URL is set in your Vercel Environment Variables.';
+  }
+  if (full.includes('etimedout') || full.includes('timeout') || full.includes('enetunreach')) {
+    return 'Database connection timed out. If connecting from Vercel to Supabase, use the Connection Pooler URL (aws-0-*.pooler.supabase.com:6543) instead of direct connection, as Vercel does not support direct IPv6.';
+  }
+  if (full.includes('password authentication failed')) {
+    return 'Database password incorrect. Please check your Supabase password inside DATABASE_URL.';
   }
   if (causeMsg && !err.message.includes(causeMsg)) {
     return `${err.message} (${causeMsg})`;
@@ -43,9 +50,33 @@ function formatDbError(err: any): string {
 }
 
 // --- REST API ROUTES ---
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let dbStatus = 'disconnected';
+  let dbError = null;
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+
+  if (hasDatabaseUrl) {
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('SELECT 1');
+        dbStatus = 'connected';
+      } finally {
+        client.release();
+      }
+    } catch (e: any) {
+      dbStatus = 'error';
+      dbError = e?.message || String(e);
+    }
+  }
+
   res.json({
     status: 'ok',
+    database: {
+      status: dbStatus,
+      error: dbError,
+      hasDatabaseUrl,
+    },
     service: 'WAVE Walkie-Talkie Backend (PostgreSQL & Vercel Serverless Ready)',
     timestamp: new Date().toISOString(),
   });
