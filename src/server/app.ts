@@ -5,6 +5,37 @@ const app = express();
 
 app.use(express.json());
 
+// Normalize URL path so both /api/foo and /foo match our defined /api/* routes on Vercel
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+  next();
+});
+
+// Auto-initialize tables on first request if they don't exist yet
+let initializedPromise: Promise<void> | null = null;
+app.use(async (req, res, next) => {
+  if (!initializedPromise) {
+    initializedPromise = dbQueries.ensureSchemaInitialized().catch((e) => {
+      console.error('Failed to auto-init schema:', e);
+    });
+  }
+  await initializedPromise;
+  next();
+});
+
+function formatDbError(err: any): string {
+  const msg = err?.message || String(err);
+  if (msg.includes('relation') && msg.includes('does not exist')) {
+    return 'Database tables not found. Please execute schema.sql in your Supabase/PostgreSQL SQL Editor.';
+  }
+  if (msg.includes('connection') || msg.includes('ECONNREFUSED') || msg.includes('timeout') || msg.includes('password authentication failed')) {
+    return `Database connection failed: ${msg}. Please check DATABASE_URL in your hosting settings.`;
+  }
+  return msg || 'Database error occurred';
+}
+
 // --- REST API ROUTES ---
 app.get('/api/health', (req, res) => {
   res.json({
@@ -25,7 +56,7 @@ app.post('/api/profiles/sync', async (req, res) => {
     res.json(profile);
   } catch (err: any) {
     console.error('Error syncing profile to database:', err);
-    res.status(500).json({ error: 'Failed to sync profile' });
+    res.status(500).json({ error: formatDbError(err) });
   }
 });
 
@@ -37,7 +68,7 @@ app.get('/api/servers', async (req, res) => {
     res.json(userServers);
   } catch (err: any) {
     console.error('Error fetching servers:', err);
-    res.status(500).json({ error: 'Failed to fetch servers' });
+    res.status(500).json({ error: formatDbError(err) });
   }
 });
 
@@ -64,8 +95,8 @@ app.post('/api/servers', async (req, res) => {
       channels,
     });
   } catch (err: any) {
-    console.error('Error creating server in Cloud SQL:', err);
-    res.status(500).json({ error: 'Failed to create server' });
+    console.error('Error creating server:', err);
+    res.status(500).json({ error: formatDbError(err) });
   }
 });
 

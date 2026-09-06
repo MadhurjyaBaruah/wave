@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Radio, ArrowRight } from 'lucide-react';
 import { Server } from '../../types/database';
+import { fetchJson } from '../../lib/api';
 
 interface JoinServerModalProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ export const JoinServerModal: React.FC<JoinServerModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/servers/join', {
+      const data = await fetchJson<{ server: Server }>('/api/servers/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -39,11 +40,6 @@ export const JoinServerModal: React.FC<JoinServerModalProps> = ({
           user_id: userId,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to join server');
-      }
 
       onServerJoined(data.server);
       setInviteCode('');

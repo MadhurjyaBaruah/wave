@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Hash, Lock, CheckSquare, Square, Plus } from 'lucide-react';
 import { Channel, ServerMember } from '../../types/database';
+import { fetchJson } from '../../lib/api';
 
 interface CreateChannelModalProps {
   isOpen: boolean;
@@ -44,7 +45,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch(`/api/servers/${serverId}/channels`, {
+      const data = await fetchJson<Channel>(`/api/servers/${serverId}/channels`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -54,11 +55,6 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
           member_ids: type === 'PRIVATE' ? selectedMemberIds : undefined,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to create channel');
-      }
 
       onChannelCreated(data);
       setName('');

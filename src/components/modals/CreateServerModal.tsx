@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Radio, Plus } from 'lucide-react';
 import { Server, Channel } from '../../types/database';
+import { fetchJson } from '../../lib/api';
 
 interface CreateServerModalProps {
   isOpen: boolean;
@@ -32,7 +33,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/servers', {
+      const data = await fetchJson<{ server: Server; channels: Channel[] }>('/api/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -42,12 +43,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to create server');
-      }
-
-      const data = await res.json();
       onServerCreated(data.server, data.channels);
       setName('');
       setDescription('');
