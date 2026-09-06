@@ -17,6 +17,7 @@ export class SignalingClient {
   private callbacks: SignalingClientCallbacks = {};
   private reconnectTimer: any = null;
   private isIntentionallyClosed: boolean = false;
+  private reconnectAttempts: number = 0;
 
   constructor(callbacks?: SignalingClientCallbacks) {
     if (callbacks) this.callbacks = callbacks;
@@ -40,13 +41,18 @@ export class SignalingClient {
       } catch {}
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const envSignalingUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
+    let wsUrl = envSignalingUrl;
+    if (!wsUrl) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host}/ws`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
+        this.reconnectAttempts = 0;
         if (this.callbacks.onConnectionChange) {
           this.callbacks.onConnectionChange(true);
         }
@@ -77,12 +83,14 @@ export class SignalingClient {
         }
 
         if (!this.isIntentionallyClosed) {
+          this.reconnectAttempts++;
+          const delay = Math.min(30000, 1000 * Math.pow(1.5, this.reconnectAttempts));
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = setTimeout(() => {
             if (this.channelId && this.currentUser && !this.isIntentionallyClosed) {
               this.connect(this.channelId, this.currentUser);
             }
-          }, 2000);
+          }, delay);
         }
       };
 

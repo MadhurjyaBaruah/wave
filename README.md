@@ -106,3 +106,27 @@ A retro-brutalist push-to-talk (PTT) walkie-talkie web platform featuring real-t
 npm run build
 npm start
 ```
+
+---
+
+## Deploying to Vercel
+
+The project includes pre-configured `vercel.json` and a Serverless Function entry point in `/api/index.ts`:
+
+1. **Push or Export to GitHub**:
+   Use AI Studio's **Export to GitHub** feature.
+2. **Import into Vercel**:
+   Go to [Vercel Dashboard](https://vercel.com/new) and import your GitHub repository.
+3. **Build & Output Settings**:
+   - Framework Preset: **Vite**
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+4. **Environment Variables**:
+   Under project settings in Vercel, add your database credentials:
+   - `SQL_HOST`: *(e.g. Neon or Cloud SQL public IP)*
+   - `SQL_USER`: *(your database user)*
+   - `SQL_PASSWORD`: *(your database password)*
+   - `SQL_DB_NAME`: *(your database name)*
+   - `SQL_PORT`: `5432`
+   - *(Optional)* `VITE_SIGNALING_SERVER_URL`: `wss://your-webrtc-signaling-service.com/ws` if running the live WebRTC audio signaling on a separate continuous WebSocket host (like Render or Cloud Run).
+5. Click **Deploy**.
