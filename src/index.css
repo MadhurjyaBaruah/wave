@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F5F2E8;
+    color: #0A0A0A;
+    font-family: 'Space Mono', monospace;
+    overflow-x: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+.font-pixel {
+  font-family: 'Silkscreen', 'Space Mono', monospace;
+}
+
+.font-mono-retro {
+  font-family: 'Space Mono', monospace;
+}
+
+.font-radio {
+  font-family: 'Share Tech Mono', 'Space Mono', monospace;
+}
+
+/* Geometric Balance Hard-Border & Shadow Utilities */
+.geo-border {
+  border: 4px solid #0A0A0A;
+}
+
+.geo-border-2 {
+  border: 2px solid #0A0A0A;
+}
+
+.geo-shadow-sm {
+  box-shadow: 2px 2px 0px #0A0A0A;
+}
+
+.geo-shadow {
+  box-shadow: 4px 4px 0px #0A0A0A;
+}
+
+.geo-shadow-lg {
+  box-shadow: 6px 6px 0px #0A0A0A;
+}
+
+.geo-shadow-xl {
+  box-shadow: 8px 8px 0px #0A0A0A;
+}
+
+.retro-box {
+  border: 4px solid #0A0A0A;
+  background-color: #FFFFFF;
+  box-shadow: 4px 4px 0px #0A0A0A;
+}
+
+.retro-box-active {
+  border: 4px solid #0A0A0A;
+  background-color: #F5F2E8;
+  box-shadow: 6px 6px 0px #0A0A0A;
+}
+
+.retro-box-transmitting {
+  border: 4px solid #0A0A0A;
+  background-color: #FF304F;
+  color: #FFFFFF;
+  box-shadow: 6px 6px 0px #0A0A0A;
+}
+
+.retro-btn {
+  border: 2px solid #0A0A0A;
+  background: #FFFFFF;
+  color: #0A0A0A;
+  transition: all 0.05s ease-in-out;
+  font-family: 'Silkscreen', 'Space Mono', monospace;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px #0A0A0A;
+}
+
+.retro-btn:hover {
+  background: #F5F2E8;
+}
+
+.retro-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #0A0A0A;
+}
+
+.retro-btn-green {
+  border: 2px solid #0A0A0A;
+  color: #0A0A0A;
+  background: #39FF14;
+  box-shadow: 3px 3px 0px #0A0A0A;
+}
+
+.retro-btn-green:hover {
+  background: #2fe00e;
+}
+
+.retro-btn-red {
+  border: 2px solid #0A0A0A;
+  color: #FFFFFF;
+  background: #FF304F;
+  box-shadow: 3px 3px 0px #0A0A0A;
+}
+
+.retro-btn-red:hover {
+  background: #e6203f;
+}
+
+.retro-btn-black {
+  border: 2px solid #0A0A0A;
+  color: #FFFFFF;
+  background: #0A0A0A;
+  box-shadow: 3px 3px 0px #0A0A0A;
+}
+
+.retro-btn-black:hover {
+  background: #262626;
+}
+
+/* LED blink animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+.animate-led {
+  animation: blink 1s infinite;
+}
+
+.animate-transmitting-pulse {
+  animation: blink 0.4s infinite;
+}

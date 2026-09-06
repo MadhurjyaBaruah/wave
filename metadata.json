@@ -1,0 +1,6 @@
+{
+  "name": "WAVE — Internet Walkie-Talkie",
+  "description": "Retro brutalist push-to-talk walkie-talkie platform with real-time WebRTC audio, server groups, voice channels, and transmission locks.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
