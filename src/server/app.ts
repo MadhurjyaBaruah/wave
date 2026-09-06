@@ -26,14 +26,20 @@ app.use(async (req, res, next) => {
 });
 
 function formatDbError(err: any): string {
-  const msg = err?.message || String(err);
-  if (msg.includes('relation') && msg.includes('does not exist')) {
-    return 'Database tables not found. Please execute schema.sql in your Supabase/PostgreSQL SQL Editor.';
+  const causeMsg = err?.cause?.message || (typeof err?.cause === 'string' ? err.cause : '');
+  const detail = err?.detail || err?.cause?.detail || '';
+  const full = `${err?.message || ''} ${causeMsg} ${detail}`.toLowerCase();
+
+  if (full.includes('relation') && full.includes('does not exist')) {
+    return 'Database tables not found. Please execute schema.sql in your Supabase SQL Editor.';
   }
-  if (msg.includes('connection') || msg.includes('ECONNREFUSED') || msg.includes('timeout') || msg.includes('password authentication failed')) {
-    return `Database connection failed: ${msg}. Please check DATABASE_URL in your hosting settings.`;
+  if (full.includes('connection') || full.includes('econnrefused') || full.includes('timeout') || full.includes('password authentication failed') || full.includes('no pg_hba.conf')) {
+    return `Database connection failed: ${causeMsg || err.message}. Please verify DATABASE_URL in Vercel.`;
   }
-  return msg || 'Database error occurred';
+  if (causeMsg && !err.message.includes(causeMsg)) {
+    return `${err.message} (${causeMsg})`;
+  }
+  return err?.message || 'Database error occurred';
 }
 
 // --- REST API ROUTES ---

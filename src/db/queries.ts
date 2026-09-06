@@ -9,54 +9,60 @@ export async function ensureSchemaInitialized() {
   try {
     const client = await pool.connect();
     try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS users (
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
           uid TEXT NOT NULL UNIQUE,
           username TEXT NOT NULL,
           display_name TEXT NOT NULL,
           avatar_url TEXT,
           created_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS servers (
+        )`,
+        `CREATE TABLE IF NOT EXISTS servers (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           description TEXT NOT NULL,
           owner_id TEXT NOT NULL,
           invite_code TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS server_members (
+        )`,
+        `CREATE TABLE IF NOT EXISTS server_members (
           id SERIAL PRIMARY KEY,
           server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
           user_id TEXT NOT NULL,
           role TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS channels (
+        )`,
+        `CREATE TABLE IF NOT EXISTS channels (
           id TEXT PRIMARY KEY,
           server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
           name TEXT NOT NULL,
           type TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS channel_members (
+        )`,
+        `CREATE TABLE IF NOT EXISTS channel_members (
           id SERIAL PRIMARY KEY,
           channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
           user_id TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON server_members(server_id);
-        CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id);
-        CREATE INDEX IF NOT EXISTS idx_channels_server_id ON channels(server_id);
-        CREATE INDEX IF NOT EXISTS idx_channel_members_channel_id ON channel_members(channel_id);
-      `);
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON server_members(server_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_channels_server_id ON channels(server_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_channel_members_channel_id ON channel_members(channel_id)`
+      ];
+
+      for (const statement of statements) {
+        await client.query(statement).catch((err) => {
+          console.warn('[PostgreSQL] Notice during schema statement:', err?.message || err);
+        });
+      }
       isSchemaInitialized = true;
     } finally {
       client.release();
     }
-  } catch (err) {
-    console.error('[PostgreSQL] Error in ensureSchemaInitialized:', err);
+  } catch (err: any) {
+    console.error('[PostgreSQL] Error in ensureSchemaInitialized:', err?.message || err);
   }
 }
 
@@ -264,6 +270,7 @@ export async function createServer(
   ownerId: string,
   inviteCode: string
 ): Promise<DbServer> {
+  await ensureSchemaInitialized();
   try {
     const res = await db.insert(servers).values({
       id,
@@ -298,9 +305,10 @@ export async function createServer(
       invite_code: s.inviteCode,
       created_at: s.createdAt ? s.createdAt.toISOString() : new Date().toISOString(),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create server:', error);
-    throw new Error('Database query failed while creating server.', { cause: error });
+    const detail = error?.message || String(error);
+    throw new Error(`Failed to create server: ${detail}`, { cause: error });
   }
 }
 
