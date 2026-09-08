@@ -239,6 +239,10 @@ export class VoiceManager {
    * Called when PTT is pressed: enables audio track on all peer connections
    */
   public async startTransmitting(): Promise<boolean> {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume().catch(() => {});
+    }
+
     const hasMic = await this.initMicrophone();
     if (!hasMic || !this.localStream) return false;
 

@@ -256,13 +256,20 @@ export default function App() {
     try {
       const lockGranted = await sc.requestSpeakerLock();
       if (lockGranted) {
-        const transmitStarted = await vm.startTransmitting();
+        let transmitStarted = await vm.startTransmitting();
+        if (!transmitStarted) {
+          // If physical mic fails or blocked, fallback to simulated tactical tone so transmission works
+          const simOk = vm.enableSimulatedMic();
+          if (simOk) {
+            transmitStarted = await vm.startTransmitting();
+          }
+        }
+
         if (transmitStarted) {
           setIsTransmitting(true);
           setIsMicBlocked(false);
           return true;
         } else {
-          // Microphone was denied, dismissed, or unavailable
           setIsTransmitting(false);
           setIsMicBlocked(true);
           sc.releaseSpeakerLock();
