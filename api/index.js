@@ -94,12 +94,13 @@ var createPool = () => {
     const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
     let config;
     if (connectionString) {
-      const needsSsl = connectionString.includes("sslmode=require") || connectionString.includes("ssl=true");
+      const isLocal = connectionString.includes("localhost") || connectionString.includes("127.0.0.1") || connectionString.includes("sslmode=disable");
+      const needsSsl = process.env.SQL_SSL === "true" || !isLocal && process.env.SQL_SSL !== "false";
       config = {
         connectionString,
         ssl: needsSsl ? { rejectUnauthorized: false } : false,
-        max: 10,
-        connectionTimeoutMillis: 15e3
+        max: 5,
+        connectionTimeoutMillis: 5e3
       };
     } else {
       const useSsl = process.env.SQL_SSL === "true";
@@ -110,8 +111,8 @@ var createPool = () => {
         database: process.env.SQL_DB_NAME,
         port: process.env.SQL_PORT ? parseInt(process.env.SQL_PORT, 10) : 5432,
         ssl: useSsl ? { rejectUnauthorized: false } : false,
-        max: 10,
-        connectionTimeoutMillis: 15e3
+        max: 5,
+        connectionTimeoutMillis: 5e3
       };
     }
     global._postgresPool = new Pool(config);
@@ -126,6 +127,69 @@ var db = drizzle(pool, { schema: schema_exports });
 
 // src/db/queries.ts
 import { eq, or, inArray, and } from "drizzle-orm";
+var isSchemaInitialized = false;
+async function ensureSchemaInitialized() {
+  if (isSchemaInitialized) return;
+  const hasDb = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SQL_HOST);
+  if (!hasDb) return;
+  try {
+    const client = await pool.connect();
+    try {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          uid TEXT NOT NULL UNIQUE,
+          username TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          avatar_url TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS servers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          invite_code TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS server_members (
+          id SERIAL PRIMARY KEY,
+          server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS channels (
+          id TEXT PRIMARY KEY,
+          server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS channel_members (
+          id SERIAL PRIMARY KEY,
+          channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON server_members(server_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_channels_server_id ON channels(server_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_channel_members_channel_id ON channel_members(channel_id)`
+      ];
+      for (const statement of statements) {
+        await client.query(statement).catch((err) => {
+          console.warn("[PostgreSQL] Notice during schema statement:", err?.message || err);
+        });
+      }
+      isSchemaInitialized = true;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error("[PostgreSQL] Error in ensureSchemaInitialized:", err?.message || err);
+  }
+}
 async function syncUserProfile(uid, username, displayName, avatarUrl) {
   try {
     const res = await db.insert(users).values({
@@ -204,6 +268,7 @@ async function getServerById(serverId) {
   }
 }
 async function createServer(id, name, description, ownerId, inviteCode) {
+  await ensureSchemaInitialized();
   try {
     const res = await db.insert(servers).values({
       id,
@@ -235,7 +300,8 @@ async function createServer(id, name, description, ownerId, inviteCode) {
     };
   } catch (error) {
     console.error("Failed to create server:", error);
-    throw new Error("Database query failed while creating server.", { cause: error });
+    const detail = error?.message || String(error);
+    throw new Error(`Failed to create server: ${detail}`, { cause: error });
   }
 }
 async function updateServer(serverId, name, description) {
@@ -451,19 +517,68 @@ async function removeServerMember(serverId, targetUserId) {
 // src/server/app.ts
 var app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  if (!req.url.startsWith("/api")) {
+    req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
+  }
+  next();
+});
+var initializedPromise = null;
+app.use(async (req, res, next) => {
+  if (!initializedPromise) {
+    initializedPromise = ensureSchemaInitialized().catch((e) => {
+      console.warn("[Server] Schema auto-init notice:", e?.message || e);
+    });
+  }
+  next();
+});
 function formatDbError(err) {
-  const msg = err?.message || String(err);
-  if (msg.includes("relation") && msg.includes("does not exist")) {
-    return "Database tables not found. Please execute schema.sql in your Supabase/PostgreSQL SQL Editor.";
+  const cause = err?.cause;
+  const causeMsg = cause?.message || (typeof cause === "string" ? cause : "");
+  const detail = err?.detail || cause?.detail || "";
+  const full = `${err?.message || ""} ${causeMsg} ${detail}`.toLowerCase();
+  if (full.includes("relation") && full.includes("does not exist")) {
+    return "Database tables not found. Please execute schema.sql in your Supabase SQL Editor.";
   }
-  if (msg.includes("connection") || msg.includes("ECONNREFUSED") || msg.includes("timeout") || msg.includes("password authentication failed")) {
-    return `Database connection failed: ${msg}. Please check DATABASE_URL in your hosting settings.`;
+  if (full.includes("econnrefused")) {
+    return "Database connection refused. Please ensure DATABASE_URL is set in your Vercel Environment Variables.";
   }
-  return msg || "Database error occurred";
+  if (full.includes("etimedout") || full.includes("timeout") || full.includes("enetunreach")) {
+    return "Database connection timed out. If connecting from Vercel to Supabase, use the Connection Pooler URL (aws-0-*.pooler.supabase.com:6543) instead of direct connection, as Vercel does not support direct IPv6.";
+  }
+  if (full.includes("password authentication failed")) {
+    return "Database password incorrect. Please check your Supabase password inside DATABASE_URL.";
+  }
+  if (causeMsg && !err.message.includes(causeMsg)) {
+    return `${err.message} (${causeMsg})`;
+  }
+  return err?.message || "Database error occurred";
 }
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
+  let dbStatus = "disconnected";
+  let dbError = null;
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+  if (hasDatabaseUrl) {
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query("SELECT 1");
+        dbStatus = "connected";
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      dbStatus = "error";
+      dbError = e?.message || String(e);
+    }
+  }
   res.json({
     status: "ok",
+    database: {
+      status: dbStatus,
+      error: dbError,
+      hasDatabaseUrl
+    },
     service: "WAVE Walkie-Talkie Backend (PostgreSQL & Vercel Serverless Ready)",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
@@ -713,7 +828,7 @@ app.all("/api/*", (req, res) => {
 });
 var app_default = app;
 
-// api/index.ts
+// src/server/handler.ts
 function handler(req, res) {
   return app_default(req, res);
 }

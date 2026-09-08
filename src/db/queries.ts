@@ -6,6 +6,8 @@ let isSchemaInitialized = false;
 
 export async function ensureSchemaInitialized() {
   if (isSchemaInitialized) return;
+  const hasDb = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SQL_HOST);
+  if (!hasDb) return;
   try {
     const client = await pool.connect();
     try {
