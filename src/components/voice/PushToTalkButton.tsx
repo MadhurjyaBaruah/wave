@@ -55,7 +55,7 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
     onReleaseLock();
   }, [onReleaseLock]);
 
-  // Window-level safety: release transmission if mouse leaves window or window blurs
+  // Window-level safety: release transmission if mouse leaves window or touches end
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (isPressingRef.current) {
@@ -63,20 +63,12 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
       }
     };
 
-    const handleBlur = () => {
-      if (isPressingRef.current) {
-        handleStopTransmitting();
-      }
-    };
-
     window.addEventListener('mouseup', handleGlobalMouseUp);
     window.addEventListener('touchend', handleGlobalMouseUp);
-    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('touchend', handleGlobalMouseUp);
-      window.removeEventListener('blur', handleBlur);
     };
   }, [handleStopTransmitting]);
 

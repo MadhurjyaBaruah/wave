@@ -61,6 +61,7 @@ export default function App() {
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [isMicBlocked, setIsMicBlocked] = useState(false);
+  const [hasMicAccess, setHasMicAccess] = useState(false);
 
   // Modals
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -97,22 +98,37 @@ export default function App() {
     }
   }, []);
 
-  // Fetch servers for current user
+  // Fetch servers for current user (with fallback to default tactical frequency)
   const fetchServers = useCallback(async () => {
     if (!currentUser?.id) return;
+    const defaultServer: Server = {
+      id: 'srv_base_camp',
+      name: 'DISPATCH FREQ // 01',
+      description: 'Central Tactical Frequency & Dispatch Net',
+      owner_id: 'usr_radio_operator',
+      invite_code: 'WAVE-TAC01',
+      created_at: new Date().toISOString(),
+    };
+
     try {
       const res = await fetch(`/api/servers?user_id=${currentUser.id}`);
       if (res.ok) {
         const data: Server[] = await res.json();
-        setServers(data);
-
-        // If no active server yet or current active server is not in list
-        if (data.length > 0 && (!activeServer || !data.find((s) => s.id === activeServer.id))) {
-          setActiveServer(data[0]);
+        if (data && data.length > 0) {
+          setServers(data);
+          if (!activeServer || !data.find((s) => s.id === activeServer.id)) {
+            setActiveServer(data[0]);
+          }
+          return;
         }
       }
     } catch (err) {
-      console.error('Failed to load servers:', err);
+      console.warn('Backend server list fetch notice, using default frequency:', err);
+    }
+
+    setServers([defaultServer]);
+    if (!activeServer) {
+      setActiveServer(defaultServer);
     }
   }, [currentUser?.id, activeServer]);
 
@@ -125,32 +141,42 @@ export default function App() {
     if (!activeServer || !currentUser?.id) return;
 
     let isMounted = true;
+    const defaultChannel: Channel = {
+      id: 'chn_main',
+      server_id: activeServer.id,
+      name: 'general-dispatch',
+      type: 'PUBLIC',
+      created_at: new Date().toISOString(),
+    };
 
     const loadServerDetails = async () => {
       try {
-        // Fetch channels accessible to current user
         const chRes = await fetch(`/api/servers/${activeServer.id}/channels?user_id=${currentUser.id}`);
         if (chRes.ok && isMounted) {
           const chData: Channel[] = await chRes.json();
-          setChannels(chData);
-
-          // Select first channel or keep existing if still available
-          if (chData.length > 0) {
+          if (chData && chData.length > 0) {
+            setChannels(chData);
             const stillExists = chData.find((c) => c.id === activeChannel?.id);
             setActiveChannel(stillExists || chData[0]);
           } else {
-            setActiveChannel(null);
+            setChannels([defaultChannel]);
+            setActiveChannel(defaultChannel);
           }
+        } else if (isMounted) {
+          setChannels([defaultChannel]);
+          setActiveChannel(defaultChannel);
         }
 
-        // Fetch server members
         const memRes = await fetch(`/api/servers/${activeServer.id}/members`);
         if (memRes.ok && isMounted) {
           const memData: ServerMember[] = await memRes.json();
           setMembers(memData);
         }
       } catch (err) {
-        console.error('Error loading server details:', err);
+        if (isMounted) {
+          setChannels([defaultChannel]);
+          setActiveChannel(defaultChannel);
+        }
       }
     };
 
@@ -299,12 +325,22 @@ export default function App() {
     }
   }, []);
 
-  // Retry microphone access
+  // Pre-check microphone when active channel changes
+  useEffect(() => {
+    if (activeChannel && voiceManagerRef.current) {
+      if (voiceManagerRef.current.hasMicrophoneAccess()) {
+        setHasMicAccess(true);
+      }
+    }
+  }, [activeChannel?.id]);
+
+  // Retry or prompt microphone access
   const handleRetryMic = async () => {
     if (!voiceManagerRef.current) return;
     try {
       const success = await voiceManagerRef.current.initMicrophone();
       if (success) {
+        setHasMicAccess(true);
         setIsMicBlocked(false);
       } else {
         setIsMicBlocked(true);
@@ -318,6 +354,7 @@ export default function App() {
   const handleEnableSimulatedMic = () => {
     if (!voiceManagerRef.current) return;
     voiceManagerRef.current.enableSimulatedMic();
+    setHasMicAccess(true);
     setIsMicBlocked(false);
   };
 
@@ -456,6 +493,7 @@ export default function App() {
                 audioLevel={audioLevel}
                 isConnected={isSignalingConnected}
                 isMicBlocked={isMicBlocked}
+                hasMicAccess={hasMicAccess}
                 onRetryMic={handleRetryMic}
                 onEnableSimulatedMic={handleEnableSimulatedMic}
                 onRequestLock={handleRequestLock}

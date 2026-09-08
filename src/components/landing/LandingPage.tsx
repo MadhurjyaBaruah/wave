@@ -120,17 +120,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 ))}
               </div>
 
-              {/* Mockup PTT Button */}
-              <div className="p-4 bg-[#F5F2E8] border-2 border-[#0A0A0A] flex flex-col items-center justify-center text-center">
-                <div className="w-20 h-20 bg-[#FFFFFF] rounded-full border-4 border-[#0A0A0A] shadow-[0_4px_0_#0A0A0A] flex flex-col items-center justify-center my-2">
+              {/* Interactive Radio Launch Button */}
+              <div 
+                onClick={onEnterDashboard}
+                className="p-4 bg-[#F5F2E8] border-2 border-[#0A0A0A] flex flex-col items-center justify-center text-center cursor-pointer hover:bg-[#FFFFFF] transition-all group"
+                title="Click to launch live walkie-talkie"
+              >
+                <div className="w-20 h-20 bg-[#39FF14] rounded-full border-4 border-[#0A0A0A] shadow-[0_4px_0_#0A0A0A] flex flex-col items-center justify-center my-2 group-hover:scale-105 group-active:translate-y-1 transition-transform">
                   <Mic className="w-7 h-7 text-[#0A0A0A]" />
-                  <span className="text-[7px] font-black uppercase text-[#0A0A0A] mt-0.5">TALK</span>
+                  <span className="text-[7px] font-black uppercase text-[#0A0A0A] mt-0.5">LAUNCH</span>
                 </div>
                 <span className="font-pixel text-xs text-[#0A0A0A] font-bold tracking-widest mt-1">
-                  HOLD TO TALK
+                  ENTER WALKIE-TALKIE
                 </span>
-                <span className="text-[10px] text-[#0A0A0A]/60 font-bold uppercase">
-                  ONE-SPEAKER ATOMIC LOCK
+                <span className="text-[10px] text-[#0A0A0A]/70 font-bold uppercase font-mono">
+                  CLICK TO LAUNCH DISPATCH NET
                 </span>
               </div>
             </div>

@@ -66,8 +66,15 @@ export class VoiceManager {
   /**
    * Acquire local microphone only when needed
    */
+  public hasMicrophoneAccess(): boolean {
+    return Boolean(
+      (this.localStream && this.localStream.getAudioTracks().some((t) => t.readyState === 'live')) ||
+      this.isSimulatedMic
+    );
+  }
+
   public async initMicrophone(): Promise<boolean> {
-    if (this.localStream && this.localStream.getAudioTracks().length > 0) {
+    if (this.localStream && this.localStream.getAudioTracks().some((t) => t.readyState === 'live')) {
       return true;
     }
 
@@ -76,8 +83,12 @@ export class VoiceManager {
     }
 
     try {
-      if (!navigator?.mediaDevices?.getUserMedia) {
-        throw new Error('navigator.mediaDevices.getUserMedia is not supported');
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('navigator.mediaDevices.getUserMedia is not supported on this browser or context');
+      }
+
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({

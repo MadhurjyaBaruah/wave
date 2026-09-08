@@ -25,6 +25,7 @@ interface VoiceConsoleProps {
   audioLevel: number;
   isConnected: boolean;
   isMicBlocked: boolean;
+  hasMicAccess?: boolean;
   onRetryMic: () => void;
   onEnableSimulatedMic?: () => void;
   onRequestLock: () => Promise<boolean>;
@@ -41,6 +42,7 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
   audioLevel,
   isConnected,
   isMicBlocked,
+  hasMicAccess = false,
   onRetryMic,
   onEnableSimulatedMic,
   onRequestLock,
@@ -239,6 +241,29 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
               </div>
             )}
           </div>
+
+          {/* Microphone Permission Prompt & Status */}
+          {!hasMicAccess ? (
+            <div className="mb-4 text-center">
+              <button
+                onClick={onRetryMic}
+                type="button"
+                className="retro-btn bg-[#39FF14] text-[#0A0A0A] px-4 py-2 text-xs font-black inline-flex items-center gap-2 border-2 border-[#0A0A0A] shadow-[3px_3px_0px_#0A0A0A] hover:translate-y-0.5 active:translate-y-1 transition-transform cursor-pointer"
+                title="Click to prompt browser for microphone access"
+              >
+                <Mic size={16} className="text-[#0A0A0A]" />
+                <span>[ 🎙️ CLICK TO ALLOW MICROPHONE ]</span>
+              </button>
+              <div className="text-[9px] font-bold text-[#0A0A0A]/60 mt-1 uppercase tracking-widest font-mono">
+                Click to grant audio access before transmitting
+              </div>
+            </div>
+          ) : (
+            <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1 bg-[#0A0A0A] text-[#39FF14] border border-[#39FF14]/40 text-[10px] font-bold font-mono uppercase tracking-widest shadow-[2px_2px_0px_#0A0A0A]">
+              <span className="w-2 h-2 rounded-full bg-[#39FF14] inline-block animate-pulse" />
+              <span>MIC LINKED // READY TO TALK</span>
+            </div>
+          )}
 
           {/* Large Circular Geometric PTT Button */}
           <PushToTalkButton
