@@ -98,6 +98,12 @@ export default function App() {
     }
   }, []);
 
+  // Ref to track activeServer without causing fetchServers to re-create on every server change
+  const activeServerRef = useRef<Server | null>(null);
+  useEffect(() => {
+    activeServerRef.current = activeServer;
+  }, [activeServer]);
+
   // Fetch servers for current user (with fallback to default tactical frequency)
   const fetchServers = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -116,7 +122,8 @@ export default function App() {
         const data: Server[] = await res.json();
         if (data && data.length > 0) {
           setServers(data);
-          if (!activeServer || !data.find((s) => s.id === activeServer.id)) {
+          const current = activeServerRef.current;
+          if (!current || !data.find((s) => s.id === current.id)) {
             setActiveServer(data[0]);
           }
           return;
@@ -127,14 +134,15 @@ export default function App() {
     }
 
     setServers([defaultServer]);
-    if (!activeServer) {
+    if (!activeServerRef.current) {
       setActiveServer(defaultServer);
     }
-  }, [currentUser?.id, activeServer]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     fetchServers();
   }, [fetchServers]);
+
 
   // Fetch channels & members when active server changes
   useEffect(() => {
