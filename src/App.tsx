@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
+import {
   Profile, 
   Server, 
   Channel, 
@@ -280,20 +280,25 @@ export default function App() {
     if (!sc || !vm || !activeChannel) return false;
 
     try {
+      // Explicitly acquire and prompt for real microphone if not already linked
+      if (!vm.hasMicrophoneAccess()) {
+        const acquired = await vm.initMicrophone(true);
+        if (!acquired) {
+          setIsMicBlocked(true);
+          setHasMicAccess(false);
+          return false;
+        }
+        setHasMicAccess(true);
+        setIsMicBlocked(false);
+      }
+
       const lockGranted = await sc.requestSpeakerLock();
       if (lockGranted) {
-        let transmitStarted = await vm.startTransmitting();
-        if (!transmitStarted) {
-          // If physical mic fails or blocked, fallback to simulated tactical tone so transmission works
-          const simOk = vm.enableSimulatedMic();
-          if (simOk) {
-            transmitStarted = await vm.startTransmitting();
-          }
-        }
-
+        const transmitStarted = await vm.startTransmitting();
         if (transmitStarted) {
           setIsTransmitting(true);
           setIsMicBlocked(false);
+          setHasMicAccess(true);
           return true;
         } else {
           setIsTransmitting(false);
@@ -325,11 +330,41 @@ export default function App() {
     }
   }, []);
 
-  // Pre-check microphone when active channel changes
+  // Pre-check or automatically connect microphone if permission is already granted in browser
   useEffect(() => {
     if (activeChannel && voiceManagerRef.current) {
       if (voiceManagerRef.current.hasMicrophoneAccess()) {
         setHasMicAccess(true);
+      } else if (typeof navigator !== 'undefined' && 'permissions' in navigator && navigator.permissions?.query) {
+        try {
+          navigator.permissions.query({ name: 'microphone' as any }).then((permissionStatus) => {
+            if (permissionStatus.state === 'granted') {
+              voiceManagerRef.current?.initMicrophone().then((ok) => {
+                if (ok) {
+                  setHasMicAccess(true);
+                  setIsMicBlocked(false);
+                }
+              }).catch(() => {});
+            } else if (permissionStatus.state === 'denied') {
+              setIsMicBlocked(true);
+              setHasMicAccess(false);
+            }
+
+            permissionStatus.onchange = () => {
+              if (permissionStatus.state === 'granted') {
+                voiceManagerRef.current?.initMicrophone().then((ok) => {
+                  if (ok) {
+                    setHasMicAccess(true);
+                    setIsMicBlocked(false);
+                  }
+                }).catch(() => {});
+              } else if (permissionStatus.state === 'denied') {
+                setIsMicBlocked(true);
+                setHasMicAccess(false);
+              }
+            };
+          }).catch(() => {});
+        } catch {}
       }
     }
   }, [activeChannel?.id]);
@@ -338,19 +373,21 @@ export default function App() {
   const handleRetryMic = async () => {
     if (!voiceManagerRef.current) return;
     try {
-      const success = await voiceManagerRef.current.initMicrophone();
+      const success = await voiceManagerRef.current.initMicrophone(true);
       if (success) {
         setHasMicAccess(true);
         setIsMicBlocked(false);
       } else {
+        setHasMicAccess(false);
         setIsMicBlocked(true);
       }
     } catch {
+      setHasMicAccess(false);
       setIsMicBlocked(true);
     }
   };
 
-  // Enable simulated walkie-talkie tone carrier when microphone is blocked/denied
+  // Optional manual testing: enable simulated tone carrier if explicitly triggered
   const handleEnableSimulatedMic = () => {
     if (!voiceManagerRef.current) return;
     voiceManagerRef.current.enableSimulatedMic();

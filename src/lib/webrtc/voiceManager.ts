@@ -68,28 +68,32 @@ export class VoiceManager {
    */
   public hasMicrophoneAccess(): boolean {
     return Boolean(
-      (this.localStream && this.localStream.getAudioTracks().some((t) => t.readyState === 'live')) ||
-      this.isSimulatedMic
+      this.localStream &&
+      !this.isSimulatedMic &&
+      this.localStream.getAudioTracks().some((t) => t.readyState === 'live')
     );
   }
 
-  public async initMicrophone(): Promise<boolean> {
-    if (this.localStream && this.localStream.getAudioTracks().some((t) => t.readyState === 'live')) {
-      return true;
-    }
-
-    if (this.isSimulatedMic) {
+  public async initMicrophone(forcePrompt: boolean = false): Promise<boolean> {
+    if (!forcePrompt && this.localStream && !this.isSimulatedMic && this.localStream.getAudioTracks().some((t) => t.readyState === 'live')) {
       return true;
     }
 
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        throw new Error('navigator.mediaDevices.getUserMedia is not supported on this browser or context');
+        throw new Error('Microphone access is not supported on this browser or environment (requires HTTPS).');
       }
 
       if (this.audioContext && this.audioContext.state === 'suspended') {
         await this.audioContext.resume().catch(() => {});
       }
+
+      // If simulated mic was running, stop it and clear
+      if (this.isSimulatedMic && this.localStream) {
+        this.localStream.getTracks().forEach((track) => track.stop());
+        this.localStream = null;
+      }
+      this.isSimulatedMic = false;
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
