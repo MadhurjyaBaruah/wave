@@ -1,5 +1,23 @@
-export async function fetchJson<T = any>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+export async function fetchJson<T = any>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs: number = 15000
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(input, { ...init, signal: controller.signal });
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (err?.name === 'AbortError') {
+      throw new Error('Request timed out. The server took too long to respond — please try again.');
+    }
+    throw err;
+  }
+  clearTimeout(timer);
+
   const text = await res.text();
 
   let data: any;
@@ -22,3 +40,4 @@ export async function fetchJson<T = any>(input: RequestInfo | URL, init?: Reques
 
   return data;
 }
+

@@ -17,8 +17,10 @@ export const createPool = () => {
       config = {
         connectionString,
         ssl: needsSsl ? { rejectUnauthorized: false } : false,
-        max: 5,
-        connectionTimeoutMillis: 5000,
+        max: 3,
+        connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000,
+        query_timeout: 12000,
       };
     } else {
       const useSsl = process.env.SQL_SSL === 'true';
@@ -29,8 +31,10 @@ export const createPool = () => {
         database: process.env.SQL_DB_NAME,
         port: process.env.SQL_PORT ? parseInt(process.env.SQL_PORT, 10) : 5432,
         ssl: useSsl ? { rejectUnauthorized: false } : false,
-        max: 5,
-        connectionTimeoutMillis: 5000,
+        max: 3,
+        connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000,
+        query_timeout: 12000,
       };
     }
 

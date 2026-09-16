@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from '../ui/Modal';
 import { Radio, Plus } from 'lucide-react';
 import { Server, Channel } from '../../types/database';
@@ -21,6 +21,20 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setLoading(false);
+    }
+  }, [isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,16 +57,21 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
         }),
       });
 
-      onServerCreated(data.server, data.channels);
-      setName('');
-      setDescription('');
+      // Call success callback — modal will be closed by parent
+      onServerCreated(data.server, data.channels ?? []);
+      if (isMountedRef.current) {
+        setName('');
+        setDescription('');
+      }
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Error creating server');
-    } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setError(err.message || 'Error creating server. Please try again.');
+        setLoading(false);
+      }
     }
   };
+
 
   return (
     <Modal

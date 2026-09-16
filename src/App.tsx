@@ -1,4 +1,19 @@
+/** @jsxRuntime classic */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elementName: string]: any;
+    }
+  }
+}
+
+declare module 'react/jsx-runtime' {
+  export const jsx: any;
+  export const jsxs: any;
+  export const Fragment: any;
+}
 import {
   Profile, 
   Server, 
@@ -473,7 +488,7 @@ export default function App() {
               servers={servers}
               activeServerId={activeServer?.id || null}
               currentUser={currentUser}
-              onSelectServer={(s) => {
+              onSelectServer={(s: Server) => {
                 setActiveServer(s);
                 setIsMobileSidebarOpen(false);
               }}
@@ -490,7 +505,7 @@ export default function App() {
                 channels={channels}
                 activeChannelId={activeChannel?.id || null}
                 userRole={currentUserRole}
-                onSelectChannel={(ch) => {
+                onSelectChannel={(ch: Channel) => {
                   setActiveChannel(ch);
                   setIsMobileSidebarOpen(false);
                 }}
@@ -580,7 +595,7 @@ export default function App() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        onAuthenticated={(p) => {
+        onAuthenticated={(p: Profile) => {
           setCurrentUser(p);
           fetchServers();
         }}
@@ -590,8 +605,9 @@ export default function App() {
         isOpen={isCreateServerOpen}
         onClose={() => setIsCreateServerOpen(false)}
         userId={currentUser.id}
-        onServerCreated={(newServer, newChannels) => {
-          setServers((prev) => [newServer, ...prev]);
+        onServerCreated={(newServer: Server, newChannels: Channel[]) => {
+          setIsCreateServerOpen(false);
+          setServers((prev: Server[]) => [newServer, ...prev]);
           setActiveServer(newServer);
           setChannels(newChannels);
           if (newChannels.length > 0) setActiveChannel(newChannels[0]);
@@ -603,9 +619,9 @@ export default function App() {
         isOpen={isJoinServerOpen}
         onClose={() => setIsJoinServerOpen(false)}
         userId={currentUser.id}
-        onServerJoined={(joinedServer) => {
-          setServers((prev) => {
-            if (prev.find((s) => s.id === joinedServer.id)) return prev;
+        onServerJoined={(joinedServer: Server) => {
+          setServers((prev: Server[]) => {
+            if (prev.find((s: Server) => s.id === joinedServer.id)) return prev;
             return [...prev, joinedServer];
           });
           setActiveServer(joinedServer);
@@ -620,8 +636,8 @@ export default function App() {
           serverId={activeServer.id}
           userId={currentUser.id}
           members={members}
-          onChannelCreated={(newChannel) => {
-            setChannels((prev) => [...prev, newChannel]);
+          onChannelCreated={(newChannel: Channel) => {
+            setChannels((prev: Channel[]) => [...prev, newChannel]);
             setActiveChannel(newChannel);
           }}
         />
@@ -637,24 +653,24 @@ export default function App() {
           currentUserId={currentUser.id}
           isOwner={isOwner}
           isAdmin={isAdmin}
-          onServerUpdated={(updated) => {
+          onServerUpdated={(updated: Server) => {
             setActiveServer(updated);
-            setServers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            setServers((prev: Server[]) => prev.map((s: Server) => (s.id === updated.id ? updated : s)));
           }}
-          onServerDeleted={(deletedId) => {
-            setServers((prev) => prev.filter((s) => s.id !== deletedId));
+          onServerDeleted={(deletedId: string) => {
+            setServers((prev: Server[]) => prev.filter((s: Server) => s.id !== deletedId));
             setActiveServer(null);
             setActiveChannel(null);
           }}
-          onChannelDeleted={(deletedId) => {
-            setChannels((prev) => prev.filter((c) => c.id !== deletedId));
+          onChannelDeleted={(deletedId: string) => {
+            setChannels((prev: Channel[]) => prev.filter((c: Channel) => c.id !== deletedId));
             if (activeChannel?.id === deletedId) {
-              const remaining = channels.filter((c) => c.id !== deletedId);
+              const remaining = channels.filter((c: Channel) => c.id !== deletedId);
               setActiveChannel(remaining.length > 0 ? remaining[0] : null);
             }
           }}
-          onMemberKicked={(kickedId) => {
-            setMembers((prev) => prev.filter((m) => m.user_id !== kickedId));
+          onMemberKicked={(kickedId: string) => {
+            setMembers((prev: ServerMember[]) => prev.filter((m: ServerMember) => m.user_id !== kickedId));
           }}
         />
       )}
@@ -663,7 +679,7 @@ export default function App() {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         profile={currentUser}
-        onProfileUpdated={(updated) => setCurrentUser(updated)}
+        onProfileUpdated={(updated: Profile) => setCurrentUser(updated)}
         onLogout={() => {
           setIsProfileOpen(false);
           setIsAuthOpen(true);
