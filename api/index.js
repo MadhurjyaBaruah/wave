@@ -99,8 +99,10 @@ var createPool = () => {
       config = {
         connectionString,
         ssl: needsSsl ? { rejectUnauthorized: false } : false,
-        max: 5,
-        connectionTimeoutMillis: 5e3
+        max: 3,
+        connectionTimeoutMillis: 1e4,
+        idleTimeoutMillis: 3e4,
+        query_timeout: 12e3
       };
     } else {
       const useSsl = process.env.SQL_SSL === "true";
@@ -111,8 +113,10 @@ var createPool = () => {
         database: process.env.SQL_DB_NAME,
         port: process.env.SQL_PORT ? parseInt(process.env.SQL_PORT, 10) : 5432,
         ssl: useSsl ? { rejectUnauthorized: false } : false,
-        max: 5,
-        connectionTimeoutMillis: 5e3
+        max: 3,
+        connectionTimeoutMillis: 1e4,
+        idleTimeoutMillis: 3e4,
+        query_timeout: 12e3
       };
     }
     global._postgresPool = new Pool(config);

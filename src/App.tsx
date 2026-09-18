@@ -38,6 +38,22 @@ import { VoiceManager } from './lib/webrtc/voiceManager';
 import { SignalingClient } from './lib/realtime/signalingClient';
 import { soundEffects } from './lib/audio/soundEffects';
 
+/** Fetch with AbortController timeout — never hangs indefinitely */
+async function fetchWithTimeout(url: string, options?: RequestInit, timeoutMs = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (err?.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
+  }
+}
+
+
 export default function App() {
   // Navigation & View State
   const [view, setView] = useState<'landing' | 'dashboard'>('landing');
@@ -132,7 +148,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(`/api/servers?user_id=${currentUser.id}`);
+      const res = await fetchWithTimeout(`/api/servers?user_id=${currentUser.id}`);
       if (res.ok) {
         const data: Server[] = await res.json();
         if (data && data.length > 0) {
@@ -145,7 +161,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.warn('Backend server list fetch notice, using default frequency:', err);
+      console.warn('[WAVE] Server list fetch timeout/error, using default frequency:', err);
     }
 
     setServers([defaultServer]);
@@ -164,8 +180,9 @@ export default function App() {
     if (!activeServer || !currentUser?.id) return;
 
     let isMounted = true;
+
     const defaultChannel: Channel = {
-      id: 'chn_main',
+      id: 'chn_' + activeServer.id.slice(-8),
       server_id: activeServer.id,
       name: 'general-dispatch',
       type: 'PUBLIC',
@@ -174,32 +191,50 @@ export default function App() {
 
     const loadServerDetails = async () => {
       try {
-        const chRes = await fetch(`/api/servers/${activeServer.id}/channels?user_id=${currentUser.id}`);
-        if (chRes.ok && isMounted) {
+        const chRes = await fetchWithTimeout(
+          `/api/servers/${activeServer.id}/channels?user_id=${currentUser.id}`
+        );
+
+        if (!isMounted) return;
+
+        if (chRes.ok) {
           const chData: Channel[] = await chRes.json();
+          if (!isMounted) return;
+
           if (chData && chData.length > 0) {
             setChannels(chData);
-            const stillExists = chData.find((c) => c.id === activeChannel?.id);
-            setActiveChannel(stillExists || chData[0]);
+            // Keep current channel if it still exists, else pick first
+            setActiveChannel((prev) => {
+              const stillExists = chData.find((c) => c.id === prev?.id);
+              return stillExists || chData[0];
+            });
           } else {
-            setChannels([defaultChannel]);
-            setActiveChannel(defaultChannel);
+            // No channels in DB yet — keep whatever is already set (may be optimistic)
+            setChannels((prev) => (prev.length > 0 && prev[0].server_id === activeServer.id ? prev : [defaultChannel]));
+            setActiveChannel((prev) => (prev && prev.server_id === activeServer.id ? prev : defaultChannel));
           }
-        } else if (isMounted) {
-          setChannels([defaultChannel]);
-          setActiveChannel(defaultChannel);
-        }
-
-        const memRes = await fetch(`/api/servers/${activeServer.id}/members`);
-        if (memRes.ok && isMounted) {
-          const memData: ServerMember[] = await memRes.json();
-          setMembers(memData);
+        } else {
+          // API error (404 for optimistic server, 500 for DB issue) — keep optimistic data
+          setChannels((prev) => (prev.length > 0 && prev[0].server_id === activeServer.id ? prev : [defaultChannel]));
+          setActiveChannel((prev) => (prev && prev.server_id === activeServer.id ? prev : defaultChannel));
         }
       } catch (err) {
+        // Timeout or network error — keep whatever is set, don't wipe optimistic data
         if (isMounted) {
-          setChannels([defaultChannel]);
-          setActiveChannel(defaultChannel);
+          setChannels((prev) => (prev.length > 0 && prev[0].server_id === activeServer.id ? prev : [defaultChannel]));
+          setActiveChannel((prev) => (prev && prev.server_id === activeServer.id ? prev : defaultChannel));
         }
+      }
+
+      // Fetch members separately (non-blocking, failure is OK)
+      try {
+        const memRes = await fetchWithTimeout(`/api/servers/${activeServer.id}/members`);
+        if (memRes.ok && isMounted) {
+          const memData: ServerMember[] = await memRes.json();
+          if (isMounted) setMembers(memData);
+        }
+      } catch {
+        // Members fetch failing is non-critical
       }
     };
 
@@ -209,6 +244,7 @@ export default function App() {
       isMounted = false;
     };
   }, [activeServer?.id, currentUser?.id]);
+
 
   // Initialize VoiceManager once
   useEffect(() => {
