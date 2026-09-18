@@ -14,6 +14,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global 8-second timeout for all API requests — prevents Vercel serverless function from hanging
+app.use((req, res, next) => {
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: 'Request timed out. The database connection is slow or unavailable. Please try again.',
+        hint: 'If this persists, check your DATABASE_URL in Vercel settings. Use the Supabase Connection Pooler URL (aws-0-*.pooler.supabase.com:6543) not the direct connection.',
+      });
+    }
+  }, 8000);
+
+  res.on('finish', () => clearTimeout(timeout));
+  res.on('close', () => clearTimeout(timeout));
+  next();
+});
+
 // Auto-initialize tables on first request if they don't exist yet
 let initializedPromise: Promise<void> | null = null;
 app.use(async (req, res, next) => {

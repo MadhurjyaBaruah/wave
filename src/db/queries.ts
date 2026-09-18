@@ -107,6 +107,7 @@ export async function seedInitialDataIfEmpty() {
   try {
     await ensureSchemaInitialized();
     const existingServers = await db.select().from(servers).limit(1);
+
     if (existingServers.length > 0) {
       return;
     }
@@ -272,8 +273,8 @@ export async function createServer(
   ownerId: string,
   inviteCode: string
 ): Promise<DbServer> {
-  await ensureSchemaInitialized();
   try {
+
     const res = await db.insert(servers).values({
       id,
       name,

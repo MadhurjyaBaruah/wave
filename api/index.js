@@ -100,9 +100,11 @@ var createPool = () => {
         connectionString,
         ssl: needsSsl ? { rejectUnauthorized: false } : false,
         max: 3,
-        connectionTimeoutMillis: 1e4,
-        idleTimeoutMillis: 3e4,
-        query_timeout: 12e3
+        connectionTimeoutMillis: 8e3,
+        idleTimeoutMillis: 2e4,
+        query_timeout: 8e3,
+        statement_timeout: 8e3,
+        lock_timeout: 5e3
       };
     } else {
       const useSsl = process.env.SQL_SSL === "true";
@@ -114,9 +116,11 @@ var createPool = () => {
         port: process.env.SQL_PORT ? parseInt(process.env.SQL_PORT, 10) : 5432,
         ssl: useSsl ? { rejectUnauthorized: false } : false,
         max: 3,
-        connectionTimeoutMillis: 1e4,
-        idleTimeoutMillis: 3e4,
-        query_timeout: 12e3
+        connectionTimeoutMillis: 8e3,
+        idleTimeoutMillis: 2e4,
+        query_timeout: 8e3,
+        statement_timeout: 8e3,
+        lock_timeout: 5e3
       };
     }
     global._postgresPool = new Pool(config);
@@ -272,7 +276,6 @@ async function getServerById(serverId) {
   }
 }
 async function createServer(id, name, description, ownerId, inviteCode) {
-  await ensureSchemaInitialized();
   try {
     const res = await db.insert(servers).values({
       id,
@@ -525,6 +528,19 @@ app.use((req, res, next) => {
   if (!req.url.startsWith("/api")) {
     req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
   }
+  next();
+});
+app.use((req, res, next) => {
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: "Request timed out. The database connection is slow or unavailable. Please try again.",
+        hint: "If this persists, check your DATABASE_URL in Vercel settings. Use the Supabase Connection Pooler URL (aws-0-*.pooler.supabase.com:6543) not the direct connection."
+      });
+    }
+  }, 8e3);
+  res.on("finish", () => clearTimeout(timeout));
+  res.on("close", () => clearTimeout(timeout));
   next();
 });
 var initializedPromise = null;

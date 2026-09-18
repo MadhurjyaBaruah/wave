@@ -216,7 +216,7 @@ export default function App() {
         } else {
           // API error (404 for optimistic server, 500 for DB issue) — keep optimistic data
           setChannels((prev) => (prev.length > 0 && prev[0].server_id === activeServer.id ? prev : [defaultChannel]));
-          setActiveChannel((prev) => (prev && prev.server_id === activeServer.id ? prev : defaultChannel));
+          setActiveChannel((prev: Channel | null) => (prev && prev.server_id === activeServer.id ? prev : defaultChannel));
         }
       } catch (err) {
         // Timeout or network error — keep whatever is set, don't wipe optimistic data
