@@ -101,7 +101,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
           try {
             const data = await res.json();
             if (data?.server && onServerSynced) {
-              // Replace local optimistic server with real DB server
+              // Replace local optimistic server with the real persisted DB server
               onServerSynced(localServer.id, data.server, data.channels ?? [localChannel]);
             }
           } catch {

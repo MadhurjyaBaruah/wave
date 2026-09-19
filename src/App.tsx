@@ -338,7 +338,8 @@ export default function App() {
       sc.disconnect();
       signalingClientRef.current = null;
     };
-  }, [activeChannel?.id, currentUser]);
+  }, [activeChannel?.id, currentUser?.id]);
+
 
   // PTT Lock Handlers
   const handleRequestLock = useCallback(async (): Promise<boolean> => {
