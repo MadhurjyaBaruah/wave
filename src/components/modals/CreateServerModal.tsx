@@ -8,6 +8,8 @@ interface CreateServerModalProps {
   onClose: () => void;
   userId: string;
   onServerCreated: (server: Server, channels: Channel[]) => void;
+  /** Called when DB sync succeeds — replaces localId server with real DB server */
+  onServerSynced?: (localId: string, realServer: Server, realChannels: Channel[]) => void;
 }
 
 function makeLocalServer(name: string, description: string, ownerId: string): Server {
@@ -38,7 +40,9 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
   onClose,
   userId,
   onServerCreated,
+  onServerSynced,
 }) => {
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,24 +97,34 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
     })
       .then(async (res) => {
         cleanup();
-        if (!res.ok) {
+        if (res.ok) {
+          try {
+            const data = await res.json();
+            if (data?.server && onServerSynced) {
+              // Replace local optimistic server with real DB server
+              onServerSynced(localServer.id, data.server, data.channels ?? [localChannel]);
+            }
+          } catch {
+            // JSON parse failure — DB sync happened but response was malformed
+          }
+        } else {
           const text = await res.text().catch(() => '');
           console.warn('[WAVE] Server sync to DB failed:', res.status, text.slice(0, 200));
         }
-        // DB sync succeeded - no action needed since we already showed the server
       })
       .catch((err) => {
         cleanup();
         if (err?.name !== 'AbortError') {
-          console.warn('[WAVE] Server sync to DB error (server will be local only):', err?.message || err);
+          console.warn('[WAVE] Server sync to DB error (server will be local only this session):', err?.message || err);
         }
       });
 
-    // Reset form for next time (do after the modal is already closing)
+    // Reset form for next time
     setName('');
     setDescription('');
     setLoading(false);
   };
+
 
   const handleClose = () => {
     cleanup();

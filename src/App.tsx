@@ -152,23 +152,31 @@ export default function App() {
       if (res.ok) {
         const data: Server[] = await res.json();
         if (data && data.length > 0) {
-          setServers(data);
+          // Merge: keep any optimistically created servers that aren't in the DB yet
+          setServers((prev) => {
+            const dbIds = new Set(data.map((s) => s.id));
+            const localOnly = prev.filter((s) => !dbIds.has(s.id));
+            return [...localOnly, ...data];
+          });
+          // Only switch active server if current one isn't in the DB AND isn't local-only
           const current = activeServerRef.current;
-          if (!current || !data.find((s) => s.id === current.id)) {
+          if (!current) {
             setActiveServer(data[0]);
           }
           return;
         }
       }
     } catch (err) {
-      console.warn('[WAVE] Server list fetch timeout/error, using default frequency:', err);
+      console.warn('[WAVE] Server list fetch timeout/error, using local data or default:', err);
     }
 
-    setServers([defaultServer]);
+    // Fallback: only set default if there's nothing already loaded
+    setServers((prev) => (prev.length > 0 ? prev : [defaultServer]));
     if (!activeServerRef.current) {
       setActiveServer(defaultServer);
     }
   }, [currentUser?.id]);
+
 
   useEffect(() => {
     fetchServers();
@@ -649,7 +657,17 @@ export default function App() {
           if (newChannels.length > 0) setActiveChannel(newChannels[0]);
           setView('dashboard');
         }}
+        onServerSynced={(localId: string, realServer: Server, realChannels: Channel[]) => {
+          // DB sync succeeded: replace the local server with the real persisted one
+          setServers((prev: Server[]) =>
+            prev.map((s) => (s.id === localId ? realServer : s))
+          );
+          setActiveServer((prev) => (prev?.id === localId ? realServer : prev));
+          setChannels((prev) => (prev.length > 0 && prev[0].server_id === localId ? realChannels : prev));
+          setActiveChannel((prev) => (prev?.server_id === localId ? realChannels[0] ?? prev : prev));
+        }}
       />
+
 
       <JoinServerModal
         isOpen={isJoinServerOpen}
