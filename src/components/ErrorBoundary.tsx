@@ -1,23 +1,29 @@
-import React from 'react';
+import React, { Component, type ReactNode, type ErrorInfo } from 'react';
 
-interface State {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
-  constructor(props: { children: React.ReactNode }) {
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[WAVE] Render error caught by ErrorBoundary:', error, info.componentStack);
   }
+
 
   render() {
     if (this.state.hasError) {
@@ -67,3 +73,4 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
     return this.props.children;
   }
 }
+

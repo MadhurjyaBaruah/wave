@@ -10,6 +10,7 @@ import {
   Hash, 
   AlertCircle, 
   RefreshCw, 
+  Mic,
   MicOff, 
   Menu,
   Radio,
