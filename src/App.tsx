@@ -273,8 +273,47 @@ export default function App() {
       onConnectionChange: (connected) => {
         setIsSignalingConnected(connected);
       },
-      onUsersUpdate: (users) => {
+      onUsersUpdate: async (users) => {
         setPresenceUsers(users);
+        const vm = voiceManagerRef.current;
+        if (!vm || !currentUser) return;
+
+        // Auto-negotiate WebRTC peer connection with each active operator in channel
+        const currentPeerIds = new Set(users.map((u) => u.user_id));
+
+        // Clean up connections for users who left
+        const existingPeers = vm.getConnectedPeerIds();
+        existingPeers.forEach((peerId) => {
+          if (!currentPeerIds.has(peerId)) {
+            vm.closePeer(peerId);
+          }
+        });
+
+        // For each remote peer, establish WebRTC connection
+        for (const peer of users) {
+          if (peer.user_id === currentUser.id) continue;
+
+          // Deterministic negotiation: the peer with the lexicographically smaller ID initiates the offer
+          // to prevent offer collision glare
+          if (currentUser.id < peer.user_id && !vm.hasPeerConnection(peer.user_id)) {
+            try {
+              const offer = await vm.createOffer(peer.user_id, (cand) => {
+                sc.sendSignal({
+                  type: 'webrtc_ice_candidate',
+                  to_user_id: peer.user_id,
+                  payload: cand,
+                });
+              });
+              sc.sendSignal({
+                type: 'webrtc_offer',
+                to_user_id: peer.user_id,
+                payload: offer,
+              });
+            } catch (err) {
+              console.warn('[WAVE] Failed to create offer for peer:', peer.user_id, err);
+            }
+          }
+        }
       },
       onSpeakerLockGranted: () => {
         setActiveSpeaker({ userId: currentUser.id, username: currentUser.username });
@@ -298,24 +337,37 @@ export default function App() {
         if (!voiceManagerRef.current || !msg.from_user_id) return;
         const vm = voiceManagerRef.current;
         if (msg.type === 'webrtc_offer') {
-          const answer = await vm.handleOffer(msg.from_user_id, msg.payload, (cand) => {
-            sc.sendSignal({
-              type: 'webrtc_ice_candidate',
-              to_user_id: msg.from_user_id,
-              payload: cand,
+          try {
+            const answer = await vm.handleOffer(msg.from_user_id, msg.payload, (cand) => {
+              sc.sendSignal({
+                type: 'webrtc_ice_candidate',
+                to_user_id: msg.from_user_id,
+                payload: cand,
+              });
             });
-          });
-          sc.sendSignal({
-            type: 'webrtc_answer',
-            to_user_id: msg.from_user_id,
-            payload: answer,
-          });
+            sc.sendSignal({
+              type: 'webrtc_answer',
+              to_user_id: msg.from_user_id,
+              payload: answer,
+            });
+          } catch (err) {
+            console.warn('[WAVE] Failed to handle offer from:', msg.from_user_id, err);
+          }
         } else if (msg.type === 'webrtc_answer') {
-          await vm.handleAnswer(msg.from_user_id, msg.payload);
+          try {
+            await vm.handleAnswer(msg.from_user_id, msg.payload);
+          } catch (err) {
+            console.warn('[WAVE] Failed to handle answer from:', msg.from_user_id, err);
+          }
         } else if (msg.type === 'webrtc_ice_candidate') {
-          await vm.handleCandidate(msg.from_user_id, msg.payload);
+          try {
+            await vm.handleCandidate(msg.from_user_id, msg.payload);
+          } catch (err) {
+            console.warn('[WAVE] Failed to handle ICE candidate:', err);
+          }
         }
       },
+
     });
 
     signalingClientRef.current = sc;
@@ -662,15 +714,27 @@ export default function App() {
         isOpen={isJoinServerOpen}
         onClose={() => setIsJoinServerOpen(false)}
         userId={currentUser.id}
-        onServerJoined={(joinedServer: Server) => {
+        onServerJoined={async (joinedServer: Server) => {
           setServers((prev: Server[]) => {
             if (prev.find((s: Server) => s.id === joinedServer.id)) return prev;
             return [...prev, joinedServer];
           });
           setActiveServer(joinedServer);
           setView('dashboard');
+
+          try {
+            const chRes = await fetchWithTimeout(`/api/servers/${joinedServer.id}/channels?user_id=${currentUser.id}`);
+            if (chRes.ok) {
+              const chData: Channel[] = await chRes.json();
+              if (chData && chData.length > 0) {
+                setChannels(chData);
+                setActiveChannel(chData[0]);
+              }
+            }
+          } catch {}
         }}
       />
+
 
       {activeServer && (
         <CreateChannelModal

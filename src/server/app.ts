@@ -384,9 +384,97 @@ app.patch('/api/servers/:id/members/:targetUserId/role', async (req, res) => {
   }
 });
 
+// --- UNIVERSAL WEBRTC SIGNALING & PRESENCE RELAY ENDPOINTS ---
+
+// Register / Heartbeat presence in channel
+app.post('/api/channels/:id/join', async (req, res) => {
+  const { id } = req.params;
+  const { user } = req.body;
+  if (!user || !user.id) {
+    return res.status(400).json({ error: 'User object required' });
+  }
+  await dbQueries.joinOrUpdatePresence(id, user.id, user);
+  res.json({ success: true });
+});
+
+// Leave channel presence
+app.post('/api/channels/:id/leave', async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.body;
+  if (user_id) {
+    await dbQueries.leaveChannelPresence(id, user_id);
+    await dbQueries.releaseSpeakerLock(id, user_id);
+  }
+  res.json({ success: true });
+});
+
+// Post a WebRTC signaling message (offer, answer, candidate)
+app.post('/api/channels/:id/signal', async (req, res) => {
+  const { id } = req.params;
+  const { from_user_id, to_user_id, type, payload } = req.body;
+  if (!from_user_id || !type) {
+    return res.status(400).json({ error: 'from_user_id and type are required' });
+  }
+  await dbQueries.insertChannelSignal(id, from_user_id, to_user_id || null, type, payload);
+  res.json({ success: true });
+});
+
+// Poll for channel presence, active speaker, and new signaling messages
+app.get('/api/channels/:id/poll', async (req, res) => {
+  const { id } = req.params;
+  const userId = (req.query.user_id || req.query.userId) as string;
+  const afterId = parseInt((req.query.after_id as string) || '0', 10);
+
+  if (!userId) {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+
+  // Heartbeat presence on every poll
+  await dbQueries.joinOrUpdatePresence(id, userId, { id: userId });
+
+  const [users, lock, signalData] = await Promise.all([
+    dbQueries.getChannelPresenceUsers(id),
+    dbQueries.getActiveSpeakerLock(id),
+    dbQueries.fetchChannelSignals(id, userId, afterId),
+  ]);
+
+  const activeSpeaker = lock ? { userId: lock.userId, username: lock.username } : null;
+  const formattedUsers = users.map((u) => ({
+    ...u,
+    is_transmitting: activeSpeaker ? activeSpeaker.userId === u.user_id : false,
+  }));
+
+  res.json({
+    users: formattedUsers,
+    active_speaker: activeSpeaker,
+    signals: signalData.signals,
+    max_id: signalData.maxId,
+  });
+});
+
+// Request or release speaker lock
+app.post('/api/channels/:id/lock', async (req, res) => {
+  const { id } = req.params;
+  const { user_id, username, action } = req.body;
+
+  if (!user_id) {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+
+  if (action === 'release') {
+    await dbQueries.releaseSpeakerLock(id, user_id);
+    return res.json({ success: true, released: true });
+  }
+
+  // Request lock
+  const result = await dbQueries.acquireSpeakerLock(id, user_id, username || 'Operator');
+  res.json(result);
+});
+
 // Catch-all for undefined /api routes
 app.all('/api/*', (req, res) => {
   res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
 });
 
 export default app;
+

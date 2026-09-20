@@ -51,7 +51,30 @@ export async function ensureSchemaInitialized() {
         `CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON server_members(server_id)`,
         `CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id)`,
         `CREATE INDEX IF NOT EXISTS idx_channels_server_id ON channels(server_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_channel_members_channel_id ON channel_members(channel_id)`
+        `CREATE INDEX IF NOT EXISTS idx_channel_members_channel_id ON channel_members(channel_id)`,
+        `CREATE TABLE IF NOT EXISTS channel_presence (
+          channel_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          user_data JSONB NOT NULL,
+          last_seen_at TIMESTAMP DEFAULT NOW(),
+          PRIMARY KEY (channel_id, user_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS channel_signals (
+          id BIGSERIAL PRIMARY KEY,
+          channel_id TEXT NOT NULL,
+          from_user_id TEXT NOT NULL,
+          to_user_id TEXT,
+          type TEXT NOT NULL,
+          payload JSONB,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_channel_signals_poll ON channel_signals(channel_id, id)`,
+        `CREATE TABLE IF NOT EXISTS channel_locks (
+          channel_id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          username TEXT NOT NULL,
+          granted_at TIMESTAMP DEFAULT NOW()
+        )`
       ];
 
       for (const statement of statements) {
@@ -581,3 +604,186 @@ export async function removeServerMember(serverId: string, targetUserId: string)
     throw new Error('Database query failed while removing member.', { cause: error });
   }
 }
+
+// --- UNIVERSAL DATABASE SIGNALING & PRESENCE RELAY ---
+
+export async function joinOrUpdatePresence(
+  channelId: string,
+  userId: string,
+  userData: any
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO channel_presence (channel_id, user_id, user_data, last_seen_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (channel_id, user_id)
+       DO UPDATE SET user_data = $3, last_seen_at = NOW()`,
+      [channelId, userId, JSON.stringify(userData)]
+    );
+  } catch (err: any) {
+    console.warn('[DB Signaling] Presence update error:', err?.message || err);
+  }
+}
+
+export async function leaveChannelPresence(channelId: string, userId: string): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM channel_presence WHERE channel_id = $1 AND user_id = $2`,
+      [channelId, userId]
+    );
+  } catch (err: any) {
+    console.warn('[DB Signaling] Presence leave error:', err?.message || err);
+  }
+}
+
+export async function getChannelPresenceUsers(channelId: string): Promise<any[]> {
+  try {
+    const res = await pool.query(
+      `SELECT user_id, user_data, last_seen_at
+       FROM channel_presence
+       WHERE channel_id = $1 AND last_seen_at > NOW() - INTERVAL '15 seconds'`,
+      [channelId]
+    );
+    return res.rows.map((row) => {
+      const parsed = typeof row.user_data === 'string' ? JSON.parse(row.user_data) : row.user_data;
+      return {
+        user_id: row.user_id,
+        username: parsed?.username || 'Operator',
+        display_name: parsed?.display_name || parsed?.username || 'Operator',
+        avatar_url: parsed?.avatar_url,
+        connected_at: row.last_seen_at,
+      };
+    });
+  } catch (err: any) {
+    console.warn('[DB Signaling] Presence fetch error:', err?.message || err);
+    return [];
+  }
+}
+
+export async function insertChannelSignal(
+  channelId: string,
+  fromUserId: string,
+  toUserId: string | null,
+  type: string,
+  payload: any
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO channel_signals (channel_id, from_user_id, to_user_id, type, payload)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [channelId, fromUserId, toUserId, type, JSON.stringify(payload ?? {})]
+    );
+
+    // Prune signals older than 2 minutes asynchronously
+    pool.query(`DELETE FROM channel_signals WHERE created_at < NOW() - INTERVAL '2 minutes'`).catch(() => {});
+  } catch (err: any) {
+    console.warn('[DB Signaling] Signal insert error:', err?.message || err);
+  }
+}
+
+export async function fetchChannelSignals(
+  channelId: string,
+  userId: string,
+  afterId: number
+): Promise<{ maxId: number; signals: any[] }> {
+  try {
+    const res = await pool.query(
+      `SELECT id, channel_id, from_user_id, to_user_id, type, payload, created_at
+       FROM channel_signals
+       WHERE channel_id = $1
+         AND id > $2
+         AND from_user_id != $3
+         AND (to_user_id IS NULL OR to_user_id = $3)
+       ORDER BY id ASC
+       LIMIT 50`,
+      [channelId, afterId, userId]
+    );
+
+    let maxId = afterId;
+    const signals = res.rows.map((r) => {
+      const idNum = Number(r.id);
+      if (idNum > maxId) maxId = idNum;
+      return {
+        id: idNum,
+        channel_id: r.channel_id,
+        from_user_id: r.from_user_id,
+        to_user_id: r.to_user_id,
+        type: r.type,
+        payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
+        created_at: r.created_at,
+      };
+    });
+
+    return { maxId, signals };
+  } catch (err: any) {
+    console.warn('[DB Signaling] Signal fetch error:', err?.message || err);
+    return { maxId: afterId, signals: [] };
+  }
+}
+
+export async function acquireSpeakerLock(
+  channelId: string,
+  userId: string,
+  username: string
+): Promise<{ granted: boolean; activeSpeaker: { userId: string; username: string } }> {
+  try {
+    const current = await pool.query(
+      `SELECT user_id, username, granted_at
+       FROM channel_locks
+       WHERE channel_id = $1`,
+      [channelId]
+    );
+
+    const row = current.rows[0];
+    const isStale = row && Date.now() - new Date(row.granted_at).getTime() > 60000;
+
+    if (!row || row.user_id === userId || isStale) {
+      await pool.query(
+        `INSERT INTO channel_locks (channel_id, user_id, username, granted_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (channel_id)
+         DO UPDATE SET user_id = $2, username = $3, granted_at = NOW()`,
+        [channelId, userId, username]
+      );
+      return { granted: true, activeSpeaker: { userId, username } };
+    }
+
+    return {
+      granted: false,
+      activeSpeaker: { userId: row.user_id, username: row.username },
+    };
+  } catch (err: any) {
+    console.warn('[DB Signaling] Lock error:', err?.message || err);
+    return { granted: true, activeSpeaker: { userId, username } };
+  }
+}
+
+export async function releaseSpeakerLock(channelId: string, userId: string): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM channel_locks WHERE channel_id = $1 AND user_id = $2`,
+      [channelId, userId]
+    );
+  } catch (err: any) {
+    console.warn('[DB Signaling] Lock release error:', err?.message || err);
+  }
+}
+
+export async function getActiveSpeakerLock(channelId: string): Promise<{ userId: string; username: string } | null> {
+  try {
+    const res = await pool.query(
+      `SELECT user_id, username, granted_at
+       FROM channel_locks
+       WHERE channel_id = $1 AND granted_at > NOW() - INTERVAL '60 seconds'`,
+      [channelId]
+    );
+    if (!res.rows.length) return null;
+    return {
+      userId: res.rows[0].user_id,
+      username: res.rows[0].username,
+    };
+  } catch {
+    return null;
+  }
+}
+

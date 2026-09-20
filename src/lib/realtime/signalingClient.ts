@@ -23,6 +23,10 @@ export class SignalingClient {
   private reconnectAttempts: number = 0;
   private activeSpeakerLock: { userId: string; username: string; grantedAt: number } | null = null;
   private isConnected: boolean = false;
+  private isHttpRelay: boolean = false;
+  private pollTimer: any = null;
+  private lastSignalId: number = 0;
+  private isPolling: boolean = false;
 
   constructor(callbacks?: SignalingClientCallbacks) {
     if (callbacks) this.callbacks = callbacks;
@@ -43,15 +47,26 @@ export class SignalingClient {
 
     this.disconnect(false);
 
-    // Mode 1: Supabase Realtime (ideal for Vercel serverless deployments without a continuous WS host)
+    // Mode 1: Supabase Realtime (ideal when VITE_SUPABASE_URL is configured)
     if (isSupabaseConfigured && supabase) {
       this.connectSupabaseRealtime(channelId, user);
       return;
     }
 
-    // Mode 2: External WebSocket (or local dev server)
-    this.connectWebSocket(channelId, user);
+    // Mode 2: External WebSocket (or local dev server on localhost)
+    const isLocalhost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const envSignalingUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
+
+    if (envSignalingUrl || isLocalhost) {
+      this.connectWebSocket(channelId, user);
+      return;
+    }
+
+    // Mode 3: Universal HTTP Signaling Relay (for Vercel serverless deployments)
+    this.connectHttpRelay(channelId, user);
   }
+
 
   private connectSupabaseRealtime(
     channelId: string,
@@ -210,13 +225,77 @@ export class SignalingClient {
       this.socket.onerror = (err) => {
         console.warn('[WAVE Signaling] WebSocket notice:', err);
         if (!this.isConnected) {
-          this.enableLocalStandby();
+          this.connectHttpRelay(channelId, user);
         }
       };
     } catch (err) {
       console.warn('[WAVE Signaling] WebSocket creation error:', err);
-      this.enableLocalStandby();
+      this.connectHttpRelay(channelId, user);
     }
+  }
+
+  private async connectHttpRelay(
+    channelId: string,
+    user: { id: string; username: string; display_name: string; avatar_url?: string }
+  ) {
+    this.isHttpRelay = true;
+    this.lastSignalId = 0;
+    this.isConnected = true;
+    this.callbacks.onConnectionChange?.(true);
+
+    try {
+      await fetch(`/api/channels/${channelId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user }),
+      });
+    } catch (e) {
+      console.warn('[WAVE HTTP Relay] Initial join notice:', e);
+    }
+
+    const poll = async () => {
+      if (!this.isHttpRelay || this.isIntentionallyClosed || !this.channelId) return;
+      if (this.isPolling) return;
+      this.isPolling = true;
+
+      try {
+        const res = await fetch(`/api/channels/${this.channelId}/poll?user_id=${user.id}&after_id=${this.lastSignalId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.max_id === 'number') {
+            this.lastSignalId = data.max_id;
+          }
+
+          if (Array.isArray(data.users)) {
+            this.callbacks.onUsersUpdate?.(data.users);
+          }
+
+          if (data.active_speaker) {
+            this.activeSpeakerLock = data.active_speaker;
+            this.callbacks.onSpeakerActive?.(data.active_speaker);
+          } else if (this.activeSpeakerLock) {
+            this.activeSpeakerLock = null;
+            this.callbacks.onSpeakerActive?.(null);
+            this.callbacks.onSpeakerLockReleased?.();
+          }
+
+          if (Array.isArray(data.signals)) {
+            for (const sig of data.signals) {
+              this.handleIncomingMessage(sig);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[WAVE HTTP Relay] Poll notice:', err);
+      } finally {
+        this.isPolling = false;
+        if (this.isHttpRelay && !this.isIntentionallyClosed) {
+          this.pollTimer = setTimeout(poll, 1000);
+        }
+      }
+    };
+
+    poll();
   }
 
   private enableLocalStandby() {
@@ -282,7 +361,7 @@ export class SignalingClient {
     }
   }
 
-  public requestSpeakerLock(): boolean {
+  public async requestSpeakerLock(): Promise<boolean> {
     if (!this.channelId || !this.currentUser) return false;
 
     // Check if channel is occupied by another operator (lock safety: auto-expire after 60s)
@@ -291,6 +370,38 @@ export class SignalingClient {
       if (!isStale) {
         this.callbacks.onSpeakerLockRejected?.('CHANNEL_BUSY', this.activeSpeakerLock.username);
         return false;
+      }
+    }
+
+    // Mode 3: HTTP Relay Lock
+    if (this.isHttpRelay) {
+      try {
+        const res = await fetch(`/api/channels/${this.channelId}/lock`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: this.currentUser.id,
+            username: this.currentUser.display_name || this.currentUser.username,
+            action: 'request',
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.granted) {
+            this.activeSpeakerLock = {
+              userId: this.currentUser.id,
+              username: this.currentUser.display_name || this.currentUser.username,
+              grantedAt: Date.now(),
+            };
+            this.callbacks.onSpeakerLockGranted?.();
+            return true;
+          } else {
+            this.callbacks.onSpeakerLockRejected?.('CHANNEL_BUSY', data.activeSpeaker?.username);
+            return false;
+          }
+        }
+      } catch (e) {
+        console.warn('[WAVE HTTP Relay] Lock request error:', e);
       }
     }
 
@@ -336,6 +447,18 @@ export class SignalingClient {
       this.activeSpeakerLock = null;
     }
 
+    // Mode 3: HTTP Relay Lock release
+    if (this.isHttpRelay) {
+      fetch(`/api/channels/${this.channelId}/lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: this.currentUser.id,
+          action: 'release',
+        }),
+      }).catch(() => {});
+    }
+
     // Supabase Realtime broadcast
     if (this.supabaseChannel) {
       this.send({
@@ -367,6 +490,14 @@ export class SignalingClient {
   }
 
   private send(msg: SignalingMessage) {
+    if (this.isHttpRelay && this.channelId) {
+      fetch(`/api/channels/${this.channelId}/signal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg),
+      }).catch((e) => console.warn('[WAVE HTTP Relay] Signal send error:', e));
+    }
+
     if (this.supabaseChannel) {
       try {
         this.supabaseChannel.send({
@@ -391,6 +522,21 @@ export class SignalingClient {
   public disconnect(sendLeave: boolean = true) {
     this.isIntentionallyClosed = true;
     clearTimeout(this.reconnectTimer);
+
+    if (this.isHttpRelay) {
+      this.isHttpRelay = false;
+      if (this.pollTimer) {
+        clearTimeout(this.pollTimer);
+        this.pollTimer = null;
+      }
+      if (this.channelId && this.currentUser) {
+        fetch(`/api/channels/${this.channelId}/leave`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: this.currentUser.id }),
+        }).catch(() => {});
+      }
+    }
 
     if (this.supabaseChannel) {
       if (sendLeave && this.channelId && this.currentUser) {
@@ -426,3 +572,4 @@ export class SignalingClient {
     this.isConnected = false;
   }
 }
+

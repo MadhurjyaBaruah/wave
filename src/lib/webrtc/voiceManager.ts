@@ -309,6 +309,14 @@ export class VoiceManager {
     }
   }
 
+  public hasPeerConnection(peerId: string): boolean {
+    return this.peerConnections.has(peerId);
+  }
+
+  public getConnectedPeerIds(): string[] {
+    return Array.from(this.peerConnections.keys());
+  }
+
   /**
    * Create or get RTCPeerConnection for a remote peer
    */
@@ -321,6 +329,13 @@ export class VoiceManager {
     }
 
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+
+    // Pre-negotiate two-way audio transceiver in the SDP
+    try {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+    } catch {
+      // Browser might use legacy API
+    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -338,16 +353,22 @@ export class VoiceManager {
     };
 
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        this.attachRemoteAudio(peerId, remoteStream);
-      }
+      const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+      this.attachRemoteAudio(peerId, stream);
     };
 
-    // Add local track if exists
+    // Add local track if already acquired
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        pc.addTrack(track, this.localStream!);
+      this.localStream.getAudioTracks().forEach((track) => {
+        try {
+          const senders = pc.getSenders();
+          const audioSender = senders.find((s) => s.track?.kind === 'audio');
+          if (audioSender) {
+            audioSender.replaceTrack(track).catch(() => {});
+          } else {
+            pc.addTrack(track, this.localStream!);
+          }
+        } catch {}
       });
     }
 
@@ -362,13 +383,31 @@ export class VoiceManager {
       audioEl = new Audio();
       audioEl.autoplay = true;
       (audioEl as any).playsInline = true;
+      audioEl.volume = 1.0;
       this.remoteAudioElements.set(peerId, audioEl);
     }
     audioEl.srcObject = stream;
-    audioEl.play().catch((err) => {
-      console.warn('[WAVE] Autoplay prevented, waiting for gesture:', err);
-    });
+
+    const tryPlay = () => {
+      if (audioEl) {
+        audioEl.play().catch(() => {
+          // Autoplay policy: unlock on first window interaction
+          const unlock = () => {
+            audioEl?.play().catch(() => {});
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('keydown', unlock);
+            window.removeEventListener('touchstart', unlock);
+          };
+          window.addEventListener('click', unlock, { once: true });
+          window.addEventListener('keydown', unlock, { once: true });
+          window.addEventListener('touchstart', unlock, { once: true });
+        });
+      }
+    };
+
+    tryPlay();
   }
+
 
   public async createOffer(peerId: string, onIceCandidate: (c: RTCIceCandidate) => void): Promise<RTCSessionDescriptionInit> {
     const pc = this.createPeerConnection(peerId, onIceCandidate);
