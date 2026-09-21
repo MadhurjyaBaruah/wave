@@ -294,7 +294,8 @@ export async function createServer(
   name: string,
   description: string,
   ownerId: string,
-  inviteCode: string
+  inviteCode: string,
+  defaultChannelId?: string
 ): Promise<DbServer> {
   try {
 
@@ -313,14 +314,15 @@ export async function createServer(
       role: 'OWNER',
     });
 
-    // Automatically create default general-dispatch channel
-    const defaultChanId = `chn_${Math.random().toString(36).substring(2, 9)}`;
+    // Automatically create default general-dispatch channel with consistent ID
+    const defaultChanId = defaultChannelId || `chn_${Math.random().toString(36).substring(2, 9)}`;
     await db.insert(channels).values({
       id: defaultChanId,
       serverId: id,
       name: 'general-dispatch',
       type: 'PUBLIC',
     });
+
 
     const s = res[0];
     return {
@@ -617,13 +619,20 @@ export async function joinOrUpdatePresence(
       `INSERT INTO channel_presence (channel_id, user_id, user_data, last_seen_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (channel_id, user_id)
-       DO UPDATE SET user_data = $3, last_seen_at = NOW()`,
+       DO UPDATE SET 
+         user_data = CASE 
+           WHEN ($3->>'username') IS NOT NULL AND ($3->>'username') != 'Operator' AND ($3->>'username') != '' 
+           THEN $3 
+           ELSE channel_presence.user_data 
+         END,
+         last_seen_at = NOW()`,
       [channelId, userId, JSON.stringify(userData)]
     );
   } catch (err: any) {
     console.warn('[DB Signaling] Presence update error:', err?.message || err);
   }
 }
+
 
 export async function leaveChannelPresence(channelId: string, userId: string): Promise<void> {
   try {

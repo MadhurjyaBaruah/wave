@@ -259,7 +259,11 @@ export class SignalingClient {
       this.isPolling = true;
 
       try {
-        const res = await fetch(`/api/channels/${this.channelId}/poll?user_id=${user.id}&after_id=${this.lastSignalId}`);
+        const usernameParam = encodeURIComponent(user.username || '');
+        const displayNameParam = encodeURIComponent(user.display_name || user.username || '');
+        const res = await fetch(
+          `/api/channels/${this.channelId}/poll?user_id=${user.id}&after_id=${this.lastSignalId}&username=${usernameParam}&display_name=${displayNameParam}`
+        );
         if (res.ok) {
           const data = await res.json();
           if (typeof data.max_id === 'number') {
@@ -290,9 +294,10 @@ export class SignalingClient {
       } finally {
         this.isPolling = false;
         if (this.isHttpRelay && !this.isIntentionallyClosed) {
-          this.pollTimer = setTimeout(poll, 1000);
+          this.pollTimer = setTimeout(poll, 600);
         }
       }
+
     };
 
     poll();

@@ -298,7 +298,7 @@ async function getServerById(serverId) {
     throw new Error("Database query failed while retrieving server.", { cause: error });
   }
 }
-async function createServer(id, name, description, ownerId, inviteCode) {
+async function createServer(id, name, description, ownerId, inviteCode, defaultChannelId) {
   try {
     const res = await db.insert(servers).values({
       id,
@@ -312,7 +312,7 @@ async function createServer(id, name, description, ownerId, inviteCode) {
       userId: ownerId,
       role: "OWNER"
     });
-    const defaultChanId = `chn_${Math.random().toString(36).substring(2, 9)}`;
+    const defaultChanId = defaultChannelId || `chn_${Math.random().toString(36).substring(2, 9)}`;
     await db.insert(channels).values({
       id: defaultChanId,
       serverId: id,
@@ -549,7 +549,13 @@ async function joinOrUpdatePresence(channelId, userId, userData) {
       `INSERT INTO channel_presence (channel_id, user_id, user_data, last_seen_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (channel_id, user_id)
-       DO UPDATE SET user_data = $3, last_seen_at = NOW()`,
+       DO UPDATE SET 
+         user_data = CASE 
+           WHEN ($3->>'username') IS NOT NULL AND ($3->>'username') != 'Operator' AND ($3->>'username') != '' 
+           THEN $3 
+           ELSE channel_presence.user_data 
+         END,
+         last_seen_at = NOW()`,
       [channelId, userId, JSON.stringify(userData)]
     );
   } catch (err) {
@@ -798,19 +804,21 @@ app.get("/api/servers", async (req, res) => {
   }
 });
 app.post("/api/servers", async (req, res) => {
-  const { name, description, owner_id } = req.body;
+  const { id, invite_code, channel_id, name, description, owner_id } = req.body;
   if (!name || !owner_id) {
     return res.status(400).json({ error: "Name and owner_id required" });
   }
-  const randomCode = "WAVE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
-  const serverId = "srv_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+  const randomCode = invite_code && typeof invite_code === "string" ? invite_code.trim().toUpperCase() : "WAVE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const serverId = id && typeof id === "string" ? id : "srv_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+  const defaultChanId = channel_id && typeof channel_id === "string" ? channel_id : "chn_" + Math.random().toString(36).substring(2, 9);
   try {
     const newServer = await createServer(
       serverId,
       name.trim().toUpperCase(),
       description?.trim() || "",
       owner_id,
-      randomCode
+      randomCode,
+      defaultChanId
     );
     const channels2 = await getServerChannels(newServer.id, owner_id);
     res.status(201).json({
@@ -922,14 +930,17 @@ app.post("/api/servers/join", async (req, res) => {
 });
 app.post("/api/servers/:id/leave", async (req, res) => {
   const { id } = req.params;
-  const { user_id } = req.body;
+  const userId = req.body?.user_id || req.query.user_id || req.query.userId;
+  if (!userId) {
+    return res.status(400).json({ error: "user_id required" });
+  }
   try {
     const server = await getServerById(id);
     if (!server) return res.status(404).json({ error: "Server not found" });
-    if (server.owner_id === user_id) {
+    if (server.owner_id === userId) {
       return res.status(400).json({ error: "Owner cannot leave their own server. Delete it or transfer ownership." });
     }
-    await removeServerMember(id, user_id);
+    await removeServerMember(id, userId);
     res.json({ success: true });
   } catch (err) {
     console.error("Error leaving server:", err);
@@ -973,13 +984,13 @@ app.delete("/api/channels/:id", async (req, res) => {
 });
 app.delete("/api/servers/:id/members/:targetUserId", async (req, res) => {
   const { id, targetUserId } = req.params;
-  const { user_id } = req.body;
+  const callerUserId = req.body?.user_id || req.query.user_id || req.query.userId || targetUserId;
   try {
     const server = await getServerById(id);
     if (!server) return res.status(404).json({ error: "Server not found" });
-    const isSelf = targetUserId === user_id;
+    const isSelf = targetUserId === callerUserId;
     const members = await getServerMembers(id);
-    const operator = members.find((m) => m.user_id === user_id);
+    const operator = members.find((m) => m.user_id === callerUserId);
     if (!isSelf) {
       if (!operator || operator.role !== "OWNER" && operator.role !== "ADMIN") {
         return res.status(403).json({ error: "Unauthorized to remove members" });
@@ -1045,10 +1056,16 @@ app.get("/api/channels/:id/poll", async (req, res) => {
   const { id } = req.params;
   const userId = req.query.user_id || req.query.userId;
   const afterId = parseInt(req.query.after_id || "0", 10);
+  const username = req.query.username || "";
+  const displayName = req.query.display_name || username || "";
   if (!userId) {
     return res.status(400).json({ error: "user_id is required" });
   }
-  await joinOrUpdatePresence(id, userId, { id: userId });
+  await joinOrUpdatePresence(id, userId, {
+    id: userId,
+    username: username || "Operator",
+    display_name: displayName || username || "Operator"
+  });
   const [users2, lock, signalData] = await Promise.all([
     getChannelPresenceUsers(id),
     getActiveSpeakerLock(id),
@@ -1074,9 +1091,15 @@ app.post("/api/channels/:id/lock", async (req, res) => {
   }
   if (action === "release") {
     await releaseSpeakerLock(id, user_id);
+    await insertChannelSignal(id, user_id, null, "speaker_lock_released", {});
     return res.json({ success: true, released: true });
   }
   const result = await acquireSpeakerLock(id, user_id, username || "Operator");
+  if (result.granted) {
+    await insertChannelSignal(id, user_id, null, "speaker_active", {
+      speaker: result.activeSpeaker
+    });
+  }
   res.json(result);
 });
 app.all("/api/*", (req, res) => {

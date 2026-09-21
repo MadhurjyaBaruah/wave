@@ -94,6 +94,8 @@ export default function App() {
   // Refs for WebRTC and Signaling Singletons
   const voiceManagerRef = useRef<VoiceManager | null>(null);
   const signalingClientRef = useRef<SignalingClient | null>(null);
+  const leftServerIdsRef = useRef<Set<string>>(new Set());
+
 
   // Sync profile with server on startup
   useEffect(() => {
@@ -139,17 +141,18 @@ export default function App() {
       const res = await fetchWithTimeout(`/api/servers?user_id=${currentUser.id}`);
       if (res.ok) {
         const data: Server[] = await res.json();
-        if (data && data.length > 0) {
-          // Merge: keep any optimistically created servers that aren't in the DB yet
+        if (data) {
+          const filteredDb = data.filter((s) => !leftServerIdsRef.current.has(s.id));
           setServers((prev) => {
-            const dbIds = new Set(data.map((s) => s.id));
-            const localOnly = prev.filter((s) => !dbIds.has(s.id));
-            return [...localOnly, ...data];
+            const dbIds = new Set(filteredDb.map((s) => s.id));
+            const localOnly = prev.filter((s) => !dbIds.has(s.id) && !leftServerIdsRef.current.has(s.id));
+            const merged = [...localOnly, ...filteredDb];
+            return merged.length > 0 ? merged : [defaultServer];
           });
-          // Only switch active server if current one isn't in the DB AND isn't local-only
           const current = activeServerRef.current;
-          if (!current) {
-            setActiveServer(data[0]);
+          if (!current || leftServerIdsRef.current.has(current.id)) {
+            const nextActive = filteredDb[0] || defaultServer;
+            setActiveServer(nextActive);
           }
           return;
         }
@@ -157,6 +160,7 @@ export default function App() {
     } catch (err) {
       console.warn('[WAVE] Server list fetch timeout/error, using local data or default:', err);
     }
+
 
     // Fallback: only set default if there's nothing already loaded
     setServers((prev) => (prev.length > 0 ? prev : [defaultServer]));
@@ -598,15 +602,33 @@ export default function App() {
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenInvite={() => setIsInviteOpen(true)}
                 onLeaveServer={async () => {
+                  if (!activeServer || !currentUser) return;
+                  const serverToLeave = activeServer;
+                  leftServerIdsRef.current.add(serverToLeave.id);
+
                   try {
-                    await fetch(`/api/servers/${activeServer.id}/members/${currentUser.id}`, {
-                      method: 'DELETE',
+                    await fetch(`/api/servers/${serverToLeave.id}/leave`, {
+                      method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ user_id: currentUser.id }),
                     });
-                    fetchServers();
-                  } catch {}
+                  } catch (e) {
+                    console.warn('Failed to leave server:', e);
+                  }
+
+                  // Immediately remove from local state
+                  setServers((prev) => {
+                    const remaining = prev.filter((s) => s.id !== serverToLeave.id);
+                    const nextActive = remaining.length > 0 ? remaining[0] : null;
+                    setActiveServer(nextActive);
+                    activeServerRef.current = nextActive;
+                    return remaining;
+                  });
+                  setChannels([]);
+                  setActiveChannel(null);
+                  fetchServers();
                 }}
+
                 className={`${
                   isMobileSidebarOpen
                     ? 'absolute inset-y-0 left-[72px] z-40 flex'

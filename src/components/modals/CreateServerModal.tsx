@@ -90,11 +90,15 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
       body: JSON.stringify({
+        id: localServer.id,
+        invite_code: localServer.invite_code,
+        channel_id: localChannel.id,
         name: trimmedName,
         description: description.trim(),
         owner_id: userId,
       }),
     })
+
       .then(async (res) => {
         cleanup();
         if (res.ok) {

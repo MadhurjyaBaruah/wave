@@ -126,13 +126,20 @@ app.get('/api/servers', async (req, res) => {
 });
 
 app.post('/api/servers', async (req, res) => {
-  const { name, description, owner_id } = req.body;
+  const { id, invite_code, channel_id, name, description, owner_id } = req.body;
   if (!name || !owner_id) {
     return res.status(400).json({ error: 'Name and owner_id required' });
   }
 
-  const randomCode = 'WAVE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-  const serverId = 'srv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+  const randomCode = (invite_code && typeof invite_code === 'string')
+    ? invite_code.trim().toUpperCase()
+    : 'WAVE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const serverId = (id && typeof id === 'string')
+    ? id
+    : 'srv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+  const defaultChanId = (channel_id && typeof channel_id === 'string')
+    ? channel_id
+    : 'chn_' + Math.random().toString(36).substring(2, 9);
 
   try {
     const newServer = await dbQueries.createServer(
@@ -140,7 +147,8 @@ app.post('/api/servers', async (req, res) => {
       name.trim().toUpperCase(),
       description?.trim() || '',
       owner_id,
-      randomCode
+      randomCode,
+      defaultChanId
     );
     const channels = await dbQueries.getServerChannels(newServer.id, owner_id);
     res.status(201).json({
@@ -152,6 +160,7 @@ app.post('/api/servers', async (req, res) => {
     res.status(500).json({ error: formatDbError(err) });
   }
 });
+
 
 app.get('/api/servers/:id', async (req, res) => {
   const { id } = req.params;
@@ -267,22 +276,27 @@ app.post('/api/servers/join', async (req, res) => {
 // Leave server
 app.post('/api/servers/:id/leave', async (req, res) => {
   const { id } = req.params;
-  const { user_id } = req.body;
+  const userId = req.body?.user_id || (req.query.user_id as string) || (req.query.userId as string);
+  if (!userId) {
+    return res.status(400).json({ error: 'user_id required' });
+  }
+
   try {
     const server = await dbQueries.getServerById(id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    if (server.owner_id === user_id) {
+    if (server.owner_id === userId) {
       return res.status(400).json({ error: 'Owner cannot leave their own server. Delete it or transfer ownership.' });
     }
 
-    await dbQueries.removeServerMember(id, user_id);
+    await dbQueries.removeServerMember(id, userId);
     res.json({ success: true });
   } catch (err: any) {
     console.error('Error leaving server:', err);
     res.status(500).json({ error: 'Failed to leave server' });
   }
 });
+
 
 // Channel creation
 app.post('/api/servers/:id/channels', async (req, res) => {
@@ -331,15 +345,15 @@ app.delete('/api/channels/:id', async (req, res) => {
 // Kick member from server or self-leave
 app.delete('/api/servers/:id/members/:targetUserId', async (req, res) => {
   const { id, targetUserId } = req.params;
-  const { user_id } = req.body;
+  const callerUserId = req.body?.user_id || (req.query.user_id as string) || (req.query.userId as string) || targetUserId;
 
   try {
     const server = await dbQueries.getServerById(id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    const isSelf = targetUserId === user_id;
+    const isSelf = targetUserId === callerUserId;
     const members = await dbQueries.getServerMembers(id);
-    const operator = members.find((m) => m.user_id === user_id);
+    const operator = members.find((m) => m.user_id === callerUserId);
 
     if (!isSelf) {
       if (!operator || (operator.role !== 'OWNER' && operator.role !== 'ADMIN')) {
@@ -358,6 +372,7 @@ app.delete('/api/servers/:id/members/:targetUserId', async (req, res) => {
     res.status(500).json({ error: 'Failed to remove member' });
   }
 });
+
 
 // Change member role
 app.patch('/api/servers/:id/members/:targetUserId/role', async (req, res) => {
@@ -424,13 +439,19 @@ app.get('/api/channels/:id/poll', async (req, res) => {
   const { id } = req.params;
   const userId = (req.query.user_id || req.query.userId) as string;
   const afterId = parseInt((req.query.after_id as string) || '0', 10);
+  const username = (req.query.username as string) || '';
+  const displayName = (req.query.display_name as string) || username || '';
 
   if (!userId) {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
-  // Heartbeat presence on every poll
-  await dbQueries.joinOrUpdatePresence(id, userId, { id: userId });
+  // Heartbeat presence on every poll, preserving or setting user_data
+  await dbQueries.joinOrUpdatePresence(id, userId, {
+    id: userId,
+    username: username || 'Operator',
+    display_name: displayName || username || 'Operator',
+  });
 
   const [users, lock, signalData] = await Promise.all([
     dbQueries.getChannelPresenceUsers(id),
@@ -463,13 +484,20 @@ app.post('/api/channels/:id/lock', async (req, res) => {
 
   if (action === 'release') {
     await dbQueries.releaseSpeakerLock(id, user_id);
+    await dbQueries.insertChannelSignal(id, user_id, null, 'speaker_lock_released', {});
     return res.json({ success: true, released: true });
   }
 
   // Request lock
   const result = await dbQueries.acquireSpeakerLock(id, user_id, username || 'Operator');
+  if (result.granted) {
+    await dbQueries.insertChannelSignal(id, user_id, null, 'speaker_active', {
+      speaker: result.activeSpeaker,
+    });
+  }
   res.json(result);
 });
+
 
 // Catch-all for undefined /api routes
 app.all('/api/*', (req, res) => {
