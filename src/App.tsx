@@ -94,7 +94,14 @@ export default function App() {
   // Refs for WebRTC and Signaling Singletons
   const voiceManagerRef = useRef<VoiceManager | null>(null);
   const signalingClientRef = useRef<SignalingClient | null>(null);
-  const leftServerIdsRef = useRef<Set<string>>(new Set());
+  const leftServerIdsRef = useRef<Set<string>>((() => {
+    try {
+      const saved = localStorage.getItem('wave_left_servers');
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  })());
 
 
   // Sync profile with server on startup
@@ -231,7 +238,7 @@ export default function App() {
         const memRes = await fetchWithTimeout(`/api/servers/${activeServer.id}/members`);
         if (memRes.ok && isMounted) {
           const memData: ServerMember[] = await memRes.json();
-          if (isMounted) setMembers(memData);
+          if (isMounted && Array.isArray(memData)) setMembers(memData);
         }
       } catch {
         // Members fetch failing is non-critical
@@ -240,8 +247,20 @@ export default function App() {
 
     loadServerDetails();
 
+    const membersInterval = setInterval(async () => {
+      if (!isMounted || !activeServer?.id) return;
+      try {
+        const memRes = await fetchWithTimeout(`/api/servers/${activeServer.id}/members`, undefined, 3000);
+        if (memRes.ok && isMounted) {
+          const memData: ServerMember[] = await memRes.json();
+          if (isMounted && Array.isArray(memData)) setMembers(memData);
+        }
+      } catch {}
+    }, 4000);
+
     return () => {
       isMounted = false;
+      clearInterval(membersInterval);
     };
   }, [activeServer?.id, currentUser?.id]);
 
@@ -509,9 +528,9 @@ export default function App() {
 
   // Determine current user's role in active server
   const currentMember = members.find((m) => m.user_id === currentUser.id);
-  const currentUserRole: ServerRole = currentMember?.role || 'MEMBER';
-  const isOwner = currentUserRole === 'OWNER';
-  const isAdmin = currentUserRole === 'ADMIN';
+  const isOwner = Boolean(activeServer?.owner_id === currentUser.id || currentMember?.role === 'OWNER');
+  const isAdmin = Boolean(currentMember?.role === 'ADMIN');
+  const currentUserRole: ServerRole = isOwner ? 'OWNER' : (currentMember?.role || 'MEMBER');
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#F5F2E8] text-[#0A0A0A] font-mono overflow-hidden">
@@ -605,6 +624,9 @@ export default function App() {
                   if (!activeServer || !currentUser) return;
                   const serverToLeave = activeServer;
                   leftServerIdsRef.current.add(serverToLeave.id);
+                  try {
+                    localStorage.setItem('wave_left_servers', JSON.stringify(Array.from(leftServerIdsRef.current)));
+                  } catch {}
 
                   try {
                     await fetch(`/api/servers/${serverToLeave.id}/leave`, {

@@ -40,20 +40,28 @@ export class SignalingClient {
     channelId: string,
     user: { id: string; username: string; display_name: string; avatar_url?: string }
   ) {
+    // 1. Clean up any existing connection first BEFORE resetting state
+    this.disconnect(false);
+
+    // 2. Set new active channel and user state
     this.channelId = channelId;
     this.currentUser = user;
     this.isIntentionallyClosed = false;
     this.activeSpeakerLock = null;
 
-    this.disconnect(false);
+    // 3. Immediately emit current user so operator list is never empty
+    this.callbacks.onUsersUpdate?.([
+      {
+        user_id: user.id,
+        username: user.username,
+        display_name: user.display_name || user.username,
+        avatar_url: user.avatar_url,
+        is_transmitting: false,
+        connected_at: new Date().toISOString(),
+      },
+    ]);
 
-    // Mode 1: Supabase Realtime (ideal when VITE_SUPABASE_URL is configured)
-    if (isSupabaseConfigured && supabase) {
-      this.connectSupabaseRealtime(channelId, user);
-      return;
-    }
-
-    // Mode 2: External WebSocket (or local dev server on localhost)
+    // Mode 1: Dedicated external WebSocket server (or localhost development)
     const isLocalhost = typeof window !== 'undefined' && 
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
     const envSignalingUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
@@ -63,7 +71,7 @@ export class SignalingClient {
       return;
     }
 
-    // Mode 3: Universal HTTP Signaling Relay (for Vercel serverless deployments)
+    // Mode 2: Universal Database HTTP Relay (ideal for Vercel and serverless architectures)
     this.connectHttpRelay(channelId, user);
   }
 
@@ -271,7 +279,22 @@ export class SignalingClient {
           }
 
           if (Array.isArray(data.users)) {
-            this.callbacks.onUsersUpdate?.(data.users);
+            let usersList: ChannelPresenceUser[] = data.users;
+            // Always ensure the local operator is included in the presence list
+            if (this.currentUser && !usersList.some((u) => u.user_id === this.currentUser!.id)) {
+              usersList = [
+                {
+                  user_id: this.currentUser.id,
+                  username: this.currentUser.username,
+                  display_name: this.currentUser.display_name || this.currentUser.username,
+                  avatar_url: this.currentUser.avatar_url,
+                  is_transmitting: Boolean(this.activeSpeakerLock?.userId === this.currentUser.id),
+                  connected_at: new Date().toISOString(),
+                },
+                ...usersList,
+              ];
+            }
+            this.callbacks.onUsersUpdate?.(usersList);
           }
 
           if (data.active_speaker) {
@@ -294,7 +317,7 @@ export class SignalingClient {
       } finally {
         this.isPolling = false;
         if (this.isHttpRelay && !this.isIntentionallyClosed) {
-          this.pollTimer = setTimeout(poll, 600);
+          this.pollTimer = setTimeout(poll, 500);
         }
       }
 
@@ -528,13 +551,14 @@ export class SignalingClient {
     this.isIntentionallyClosed = true;
     clearTimeout(this.reconnectTimer);
 
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+
     if (this.isHttpRelay) {
       this.isHttpRelay = false;
-      if (this.pollTimer) {
-        clearTimeout(this.pollTimer);
-        this.pollTimer = null;
-      }
-      if (this.channelId && this.currentUser) {
+      if (sendLeave && this.channelId && this.currentUser) {
         fetch(`/api/channels/${this.channelId}/leave`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

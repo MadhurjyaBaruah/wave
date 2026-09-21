@@ -125,7 +125,7 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
                 </div>
               ) : (
                 presenceUsers.map((u) => {
-                  const isUserTransmitting = activeSpeaker?.userId === u.user_id;
+                  const isUserTransmitting = (activeSpeaker?.userId === u.user_id) || Boolean(u.is_transmitting);
 
                   return (
                     <div

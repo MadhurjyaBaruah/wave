@@ -650,7 +650,7 @@ export async function getChannelPresenceUsers(channelId: string): Promise<any[]>
     const res = await pool.query(
       `SELECT user_id, user_data, last_seen_at
        FROM channel_presence
-       WHERE channel_id = $1 AND last_seen_at > NOW() - INTERVAL '15 seconds'`,
+       WHERE channel_id = $1 AND last_seen_at > NOW() - INTERVAL '45 seconds'`,
       [channelId]
     );
     return res.rows.map((row) => {
