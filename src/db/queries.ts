@@ -615,15 +615,17 @@ export async function joinOrUpdatePresence(
   userData: any
 ): Promise<void> {
   try {
-    await pool.query(
+     await pool.query(
       `INSERT INTO channel_presence (channel_id, user_id, user_data, last_seen_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (channel_id, user_id)
        DO UPDATE SET 
          user_data = CASE 
-           WHEN ($3->>'username') IS NOT NULL AND ($3->>'username') != 'Operator' AND ($3->>'username') != '' 
+           WHEN ($3->>'display_name') IS NOT NULL AND ($3->>'display_name') != 'Radio Operator' AND ($3->>'display_name') != '' 
            THEN $3 
-           ELSE channel_presence.user_data 
+           WHEN channel_presence.user_data IS NOT NULL 
+           THEN channel_presence.user_data 
+           ELSE $3 
          END,
          last_seen_at = NOW()`,
       [channelId, userId, JSON.stringify(userData)]

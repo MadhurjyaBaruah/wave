@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Channel, ChannelPresenceUser, Server } from '../../types/database';
+import { Channel, ChannelPresenceUser, Server, Profile, ServerMember } from '../../types/database';
 import { PushToTalkButton } from './PushToTalkButton';
 import { AudioVuMeter } from './AudioVuMeter';
 import { soundEffects } from '../../lib/audio/soundEffects';
@@ -10,7 +10,7 @@ import {
   Hash, 
   AlertCircle, 
   RefreshCw, 
-  Mic,
+  Mic, 
   MicOff, 
   Menu,
   Radio,
@@ -26,6 +26,8 @@ interface VoiceConsoleProps {
   audioLevel: number;
   isConnected: boolean;
   isMicBlocked: boolean;
+  currentUser?: Profile;
+  members?: ServerMember[];
   hasMicAccess?: boolean;
   onRetryMic: () => void;
   onEnableSimulatedMic?: () => void;
@@ -43,6 +45,8 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
   audioLevel,
   isConnected,
   isMicBlocked,
+  currentUser,
+  members = [],
   hasMicAccess = false,
   onRetryMic,
   onEnableSimulatedMic,
@@ -125,18 +129,49 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
                 </div>
               ) : (
                 presenceUsers.map((u) => {
-                  const isUserTransmitting = (activeSpeaker?.userId === u.user_id) || Boolean(u.is_transmitting);
+                  const isLocalUser = currentUser?.id === u.user_id;
+                  const isUserTransmitting = 
+                    (isLocalUser && isTransmitting) ||
+                    (activeSpeaker?.userId === u.user_id) ||
+                    Boolean(u.is_transmitting);
+
+                  const isOwner = u.user_id === server.owner_id;
+                  let affiliationTag = '';
+                  if (isLocalUser) {
+                    affiliationTag = isOwner ? '[YOU · HOST]' : '[YOU · MEMBER (VIA INVITE)]';
+                  } else if (isOwner) {
+                    affiliationTag = '[HOST / OWNER]';
+                  } else {
+                    affiliationTag = '[MEMBER · JOINED VIA INVITE]';
+                  }
+
+                  // Build clear, distinct callsign
+                  let displayName = u.display_name || u.username;
+                  if (
+                    !displayName || 
+                    displayName.toLowerCase() === 'radio operator' || 
+                    displayName.toLowerCase() === 'operator'
+                  ) {
+                    if (u.username && u.username.toLowerCase() !== 'operator') {
+                      displayName = u.username.startsWith('op_')
+                        ? `Operator ${u.username.replace('op_', '')}`
+                        : u.username.toUpperCase();
+                    } else {
+                      const suffix = u.user_id ? u.user_id.slice(-4).toUpperCase() : 'CALL';
+                      displayName = `Operator ${suffix}`;
+                    }
+                  }
 
                   return (
                     <div
                       key={u.user_id}
-                      className={`flex items-center justify-between p-2 border-2 border-[#0A0A0A] ${
+                      className={`flex items-center justify-between p-2.5 border-2 border-[#0A0A0A] gap-2 ${
                         isUserTransmitting
                           ? 'bg-[#0A0A0A] text-[#FFFFFF] shadow-[3px_3px_0px_#FF304F]'
                           : 'bg-[#FFFFFF] text-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]'
                       }`}
                     >
-                      <div className="flex items-center gap-3 truncate">
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
                         <div
                           className={`w-3 h-3 border border-[#0A0A0A] shrink-0 ${
                             isUserTransmitting
@@ -144,14 +179,19 @@ export const VoiceConsole: React.FC<VoiceConsoleProps> = ({
                               : 'bg-[#39FF14]'
                           }`}
                         />
-                        <span className={`text-sm uppercase truncate ${isUserTransmitting ? 'font-black text-[#FF304F]' : 'font-bold'}`}>
-                          {u.display_name || u.username}
-                        </span>
+                        <div className="flex items-baseline gap-1.5 truncate">
+                          <span className={`text-sm uppercase truncate ${isUserTransmitting ? 'font-black text-[#FF304F]' : 'font-bold text-[#0A0A0A]'}`}>
+                            {displayName}
+                          </span>
+                          <span className={`text-[10px] font-bold font-mono tracking-tight shrink-0 ${isUserTransmitting ? 'text-[#FFFFFF]/80' : 'text-[#0A0A0A]/60'}`}>
+                            {affiliationTag}
+                          </span>
+                        </div>
                       </div>
 
-                      <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 border border-[#0A0A0A] ${
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 border border-[#0A0A0A] shrink-0 ${
                         isUserTransmitting
-                          ? 'bg-[#FF304F] text-[#FFFFFF]'
+                          ? 'bg-[#FF304F] text-[#FFFFFF] shadow-[1px_1px_0px_#0A0A0A] animate-pulse'
                           : 'bg-[#F5F2E8] text-[#0A0A0A]'
                       }`}>
                         {isUserTransmitting ? 'TRANSMITTING' : 'IDLE'}

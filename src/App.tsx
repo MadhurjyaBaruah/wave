@@ -52,14 +52,25 @@ export default function App() {
     const saved = localStorage.getItem('wave_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed?.id && parsed?.username) {
+          // If saved user has generic 'Radio Operator' as display name, upgrade to distinct callsign
+          const rawName = (parsed.display_name || '').trim().toLowerCase();
+          if (!rawName || rawName === 'radio operator' || rawName === 'operator') {
+            const num = parsed.username.replace('op_', '') || Math.floor(100 + Math.random() * 900);
+            parsed.display_name = `Operator ${num}`;
+            localStorage.setItem('wave_user', JSON.stringify(parsed));
+          }
+          return parsed;
+        }
       } catch {}
     }
     // Default guest operator callsign
+    const callsignNum = Math.floor(100 + Math.random() * 900);
     const defaultOperator: Profile = {
       id: 'usr_' + Math.random().toString(36).substring(2, 9),
-      username: 'op_' + Math.floor(100 + Math.random() * 900),
-      display_name: 'Radio Operator',
+      username: 'op_' + callsignNum,
+      display_name: `Operator ${callsignNum}`,
       created_at: new Date().toISOString(),
     };
     localStorage.setItem('wave_user', JSON.stringify(defaultOperator));
@@ -415,9 +426,13 @@ export default function App() {
       if (!vm.hasMicrophoneAccess()) {
         const acquired = await vm.initMicrophone(true);
         if (!acquired) {
-          setIsMicBlocked(true);
-          setHasMicAccess(false);
-          return false;
+          console.warn('[WAVE] Real mic unavailable, falling back to simulated carrier tone');
+          const simOk = vm.enableSimulatedMic();
+          if (!simOk) {
+            setIsMicBlocked(true);
+            setHasMicAccess(false);
+            return false;
+          }
         }
         setHasMicAccess(true);
         setIsMicBlocked(false);
@@ -428,6 +443,7 @@ export default function App() {
         const transmitStarted = await vm.startTransmitting();
         if (transmitStarted) {
           setIsTransmitting(true);
+          setActiveSpeaker({ userId: currentUser.id, username: currentUser.display_name || currentUser.username });
           setIsMicBlocked(false);
           setHasMicAccess(true);
           return true;
@@ -682,6 +698,8 @@ export default function App() {
                 audioLevel={audioLevel}
                 isConnected={isSignalingConnected}
                 isMicBlocked={isMicBlocked}
+                currentUser={currentUser}
+                members={members}
                 hasMicAccess={hasMicAccess}
                 onRetryMic={handleRetryMic}
                 onEnableSimulatedMic={handleEnableSimulatedMic}

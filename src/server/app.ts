@@ -447,10 +447,16 @@ app.get('/api/channels/:id/poll', async (req, res) => {
   }
 
   // Heartbeat presence on every poll, preserving or setting user_data
+  const fallbackNum = userId.slice(-4).toUpperCase();
+  const cleanUsername = username && username !== 'Operator' ? username : `op_${fallbackNum}`;
+  const cleanDisplayName = displayName && displayName !== 'Radio Operator' && displayName !== 'Operator' 
+    ? displayName 
+    : (cleanUsername.startsWith('op_') ? `Operator ${cleanUsername.replace('op_', '')}` : `Operator ${fallbackNum}`);
+
   await dbQueries.joinOrUpdatePresence(id, userId, {
     id: userId,
-    username: username || 'Operator',
-    display_name: displayName || username || 'Operator',
+    username: cleanUsername,
+    display_name: cleanDisplayName,
   });
 
   const [users, lock, signalData] = await Promise.all([

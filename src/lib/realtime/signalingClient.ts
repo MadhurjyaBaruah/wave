@@ -278,8 +278,24 @@ export class SignalingClient {
             this.lastSignalId = data.max_id;
           }
 
+          if (data.active_speaker) {
+            this.activeSpeakerLock = data.active_speaker;
+            this.callbacks.onSpeakerActive?.(data.active_speaker);
+          } else if (this.activeSpeakerLock) {
+            this.activeSpeakerLock = null;
+            this.callbacks.onSpeakerActive?.(null);
+            this.callbacks.onSpeakerLockReleased?.();
+          }
+
           if (Array.isArray(data.users)) {
-            let usersList: ChannelPresenceUser[] = data.users;
+            let usersList: ChannelPresenceUser[] = data.users.map((u: any) => ({
+              ...u,
+              is_transmitting: Boolean(
+                u.is_transmitting ||
+                (this.activeSpeakerLock && this.activeSpeakerLock.userId === u.user_id)
+              ),
+            }));
+
             // Always ensure the local operator is included in the presence list
             if (this.currentUser && !usersList.some((u) => u.user_id === this.currentUser!.id)) {
               usersList = [
@@ -293,17 +309,18 @@ export class SignalingClient {
                 },
                 ...usersList,
               ];
+            } else if (this.currentUser) {
+              usersList = usersList.map((u) => {
+                if (u.user_id === this.currentUser!.id) {
+                  return {
+                    ...u,
+                    is_transmitting: Boolean(u.is_transmitting || (this.activeSpeakerLock?.userId === this.currentUser!.id)),
+                  };
+                }
+                return u;
+              });
             }
             this.callbacks.onUsersUpdate?.(usersList);
-          }
-
-          if (data.active_speaker) {
-            this.activeSpeakerLock = data.active_speaker;
-            this.callbacks.onSpeakerActive?.(data.active_speaker);
-          } else if (this.activeSpeakerLock) {
-            this.activeSpeakerLock = null;
-            this.callbacks.onSpeakerActive?.(null);
-            this.callbacks.onSpeakerLockReleased?.();
           }
 
           if (Array.isArray(data.signals)) {

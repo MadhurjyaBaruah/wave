@@ -24,8 +24,10 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
   const [isPressing, setIsPressing] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const isPressingRef = useRef(false);
+  const pressStartTimeRef = useRef(0);
+  const isLatchedRef = useRef(false);
 
-  const handleStartTransmitting = useCallback(async () => {
+  const startTransmittingAction = useCallback(async () => {
     if (disabled) return;
     if (isChannelOccupied && !isTransmitting) {
       soundEffects.playBusyError();
@@ -42,14 +44,15 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
     if (!granted) {
       isPressingRef.current = false;
       setIsPressing(false);
+      isLatchedRef.current = false;
       soundEffects.playBusyError();
       if (onBusyAlert) onBusyAlert();
     }
   }, [disabled, isChannelOccupied, isTransmitting, onRequestLock, onBusyAlert]);
 
-  const handleStopTransmitting = useCallback(() => {
-    if (!isPressingRef.current) return;
+  const stopTransmittingAction = useCallback(() => {
     isPressingRef.current = false;
+    isLatchedRef.current = false;
     setIsPressing(false);
     soundEffects.playPttRelease();
     onReleaseLock();
@@ -58,8 +61,12 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
   // Window-level safety: release transmission if mouse leaves window or touches end
   useEffect(() => {
     const handleGlobalMouseUp = () => {
-      if (isPressingRef.current) {
-        handleStopTransmitting();
+      // Only release on global mouseup if it was a held press (>350ms), not latched
+      if (isPressingRef.current && !isLatchedRef.current) {
+        const duration = Date.now() - pressStartTimeRef.current;
+        if (duration > 350) {
+          stopTransmittingAction();
+        }
       }
     };
 
@@ -70,7 +77,7 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
       window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('touchend', handleGlobalMouseUp);
     };
-  }, [handleStopTransmitting]);
+  }, [stopTransmittingAction]);
 
   // Keyboard shortcut: Spacebar or T key to hold to talk
   useEffect(() => {
@@ -82,7 +89,7 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
 
       if ((e.code === 'Space' || e.key === 't' || e.key === 'T') && !e.repeat) {
         e.preventDefault();
-        handleStartTransmitting();
+        startTransmittingAction();
       }
     };
 
@@ -94,7 +101,7 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
 
       if (e.code === 'Space' || e.key === 't' || e.key === 'T') {
         e.preventDefault();
-        handleStopTransmitting();
+        stopTransmittingAction();
       }
     };
 
@@ -105,11 +112,11 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [handleStartTransmitting, handleStopTransmitting]);
+  }, [startTransmittingAction, stopTransmittingAction]);
 
   // Geometric Balance button dynamic properties
-  let buttonStatusText = 'HOLD TO TALK';
-  let buttonSubText = '[SPACEBAR] OR [T]';
+  let buttonStatusText = 'PUSH TO TALK';
+  let buttonSubText = '[HOLD OR CLICK TO TALK]';
   let buttonBg = 'bg-[#FFFFFF]';
   let buttonText = 'text-[#0A0A0A]';
   let buttonShadow = 'shadow-[0_10px_0_#0A0A0A]';
@@ -117,7 +124,7 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
   let iconComponent = <Mic size={24} className="text-[#39FF14]" />;
 
   if (isTransmitting) {
-    buttonStatusText = 'TRANSMITTING';
+    buttonStatusText = isLatchedRef.current ? 'TRANSMITTING [TAP TO STOP]' : 'TRANSMITTING LIVE';
     buttonSubText = 'MIC ON AIR';
     buttonBg = 'bg-[#FF304F]';
     buttonText = 'text-[#FFFFFF]';
@@ -146,29 +153,27 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
             ? 'Currently transmitting'
             : isChannelOccupied
             ? `Channel occupied by ${activeSpeakerName || 'operator'}`
-            : 'Hold to talk'
+            : 'Hold or click to talk'
         }
-        onMouseDown={(e) => {
+        onPointerDown={(e) => {
           e.preventDefault();
-          handleStartTransmitting();
+          if (disabled) return;
+          if (isTransmitting && isLatchedRef.current) {
+            stopTransmittingAction();
+            return;
+          }
+          pressStartTimeRef.current = Date.now();
+          startTransmittingAction();
         }}
-        onMouseUp={(e) => {
+        onPointerUp={(e) => {
           e.preventDefault();
-          handleStopTransmitting();
-        }}
-        onMouseLeave={() => {
-          if (isPressingRef.current) handleStopTransmitting();
-        }}
-        onTouchStart={(e) => {
-          e.preventDefault();
-          handleStartTransmitting();
-        }}
-        onTouchEnd={(e) => {
-          e.preventDefault();
-          handleStopTransmitting();
-        }}
-        onTouchCancel={() => {
-          if (isPressingRef.current) handleStopTransmitting();
+          if (!isPressingRef.current) return;
+          const duration = Date.now() - pressStartTimeRef.current;
+          if (duration < 350) {
+            isLatchedRef.current = true;
+          } else {
+            stopTransmittingAction();
+          }
         }}
         className={`group relative w-48 h-48 md:w-52 md:h-52 rounded-full border-8 border-[#0A0A0A] ${buttonBg} ${buttonShadow} flex flex-col items-center justify-center cursor-pointer transition-all duration-75 active:translate-y-2 active:shadow-[0_2px_0_#0A0A0A] focus:outline-none`}
       >

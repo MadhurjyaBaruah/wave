@@ -551,9 +551,11 @@ async function joinOrUpdatePresence(channelId, userId, userData) {
        ON CONFLICT (channel_id, user_id)
        DO UPDATE SET 
          user_data = CASE 
-           WHEN ($3->>'username') IS NOT NULL AND ($3->>'username') != 'Operator' AND ($3->>'username') != '' 
+           WHEN ($3->>'display_name') IS NOT NULL AND ($3->>'display_name') != 'Radio Operator' AND ($3->>'display_name') != '' 
            THEN $3 
-           ELSE channel_presence.user_data 
+           WHEN channel_presence.user_data IS NOT NULL 
+           THEN channel_presence.user_data 
+           ELSE $3 
          END,
          last_seen_at = NOW()`,
       [channelId, userId, JSON.stringify(userData)]
@@ -1061,10 +1063,13 @@ app.get("/api/channels/:id/poll", async (req, res) => {
   if (!userId) {
     return res.status(400).json({ error: "user_id is required" });
   }
+  const fallbackNum = userId.slice(-4).toUpperCase();
+  const cleanUsername = username && username !== "Operator" ? username : `op_${fallbackNum}`;
+  const cleanDisplayName = displayName && displayName !== "Radio Operator" && displayName !== "Operator" ? displayName : cleanUsername.startsWith("op_") ? `Operator ${cleanUsername.replace("op_", "")}` : `Operator ${fallbackNum}`;
   await joinOrUpdatePresence(id, userId, {
     id: userId,
-    username: username || "Operator",
-    display_name: displayName || username || "Operator"
+    username: cleanUsername,
+    display_name: cleanDisplayName
   });
   const [users2, lock, signalData] = await Promise.all([
     getChannelPresenceUsers(id),

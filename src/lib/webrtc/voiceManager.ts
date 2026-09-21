@@ -67,9 +67,9 @@ export class VoiceManager {
    * Acquire local microphone only when needed
    */
   public hasMicrophoneAccess(): boolean {
+    if (this.isSimulatedMic && this.localStream) return true;
     return Boolean(
       this.localStream &&
-      !this.isSimulatedMic &&
       this.localStream.getAudioTracks().some((t) => t.readyState === 'live')
     );
   }
@@ -258,8 +258,13 @@ export class VoiceManager {
       await this.audioContext.resume().catch(() => {});
     }
 
-    const hasMic = await this.initMicrophone();
-    if (!hasMic || !this.localStream) return false;
+    if (!this.isSimulatedMic) {
+      const hasMic = await this.initMicrophone();
+      if (!hasMic || !this.localStream) return false;
+    } else if (!this.localStream) {
+      this.enableSimulatedMic();
+      if (!this.localStream) return false;
+    }
 
     this.isTransmitting = true;
     this.localStream.getAudioTracks().forEach((track) => {
