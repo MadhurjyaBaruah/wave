@@ -18,6 +18,7 @@ export class VoiceManager {
   private animFrameId: number | null = null;
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private remoteAudioElements: Map<string, HTMLAudioElement> = new Map();
+  private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
   private callbacks: VoiceManagerCallbacks = {};
   private isTransmitting: boolean = false;
   private isSimulatedMic: boolean = false;
@@ -30,6 +31,10 @@ export class VoiceManager {
         (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_STUN_URL) ||
         'stun:stun.l.google.com:19302',
         'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun3.l.google.com:19302',
+        'stun:stun4.l.google.com:19302',
+        'stun:stun.cloudflare.com:3478',
       ],
     },
   ];
@@ -251,7 +256,36 @@ export class VoiceManager {
   }
 
   /**
-   * Called when PTT is pressed: enables audio track on all peer connections
+   * Generates a completely silent MediaStreamTrack for SDP audio pre-negotiation
+   */
+  public createSilentAudioTrack(): MediaStreamTrack {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+      const dest = this.audioContext.createMediaStreamDestination();
+      const osc = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
+      gain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      const silentTrack = dest.stream.getAudioTracks()[0];
+      silentTrack.enabled = false;
+      return silentTrack;
+    } catch {
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      return dest.stream.getAudioTracks()[0];
+    }
+  }
+
+  /**
+   * Called when PTT is pressed: enables audio track and swaps into all peer senders
    */
   public async startTransmitting(): Promise<boolean> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
@@ -260,35 +294,34 @@ export class VoiceManager {
 
     if (!this.isSimulatedMic) {
       const hasMic = await this.initMicrophone();
-      if (!hasMic || !this.localStream) return false;
+      if (!hasMic || !this.localStream) {
+        this.enableSimulatedMic();
+      }
     } else if (!this.localStream) {
       this.enableSimulatedMic();
-      if (!this.localStream) return false;
     }
 
+    if (!this.localStream) return false;
+
     this.isTransmitting = true;
-    this.localStream.getAudioTracks().forEach((track) => {
-      track.enabled = true;
-    });
+    const localTrack = this.localStream.getAudioTracks()[0];
+    if (localTrack) {
+      localTrack.enabled = true;
+    }
 
     if (this.isSimulatedMic && this.simulatedGainNode && this.audioContext) {
       this.simulatedGainNode.gain.setValueAtTime(0.5, this.audioContext.currentTime);
     }
 
-    // Make sure all peer connections have this track
-    const localTrack = this.localStream.getAudioTracks()[0];
+    // Seamlessly swap live audio track into pre-negotiated RTP senders (zero SDP renegotiation required)
     if (localTrack) {
       this.peerConnections.forEach((pc) => {
         const senders = pc.getSenders();
-        const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
+        const audioSender = senders.find((s) => s.track?.kind === 'audio' || (s as any).kind === 'audio') || senders[0];
         if (audioSender) {
-          audioSender.replaceTrack(localTrack).catch(() => {});
-        } else {
-          try {
-            pc.addTrack(localTrack, this.localStream!);
-          } catch (e) {
-            // Track might already be added
-          }
+          audioSender.replaceTrack(localTrack).catch((e) => {
+            console.warn('[WAVE WebRTC] replaceTrack error:', e);
+          });
         }
       });
     }
@@ -323,7 +356,7 @@ export class VoiceManager {
   }
 
   /**
-   * Create or get RTCPeerConnection for a remote peer
+   * Create or get RTCPeerConnection for a remote peer with pre-negotiated audio track
    */
   public createPeerConnection(
     peerId: string,
@@ -335,11 +368,18 @@ export class VoiceManager {
 
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
-    // Pre-negotiate two-way audio transceiver in the SDP
+    // Pre-negotiate two-way audio transceiver with an active track from the start
+    let initialTrack = this.localStream ? this.localStream.getAudioTracks()[0] : null;
+    if (!initialTrack) {
+      initialTrack = this.createSilentAudioTrack();
+    }
+
     try {
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver(initialTrack, { direction: 'sendrecv' });
     } catch {
-      // Browser might use legacy API
+      try {
+        pc.addTrack(initialTrack);
+      } catch {}
     }
 
     pc.onicecandidate = (event) => {
@@ -349,33 +389,21 @@ export class VoiceManager {
     };
 
     pc.onconnectionstatechange = () => {
+      console.log(`[WAVE WebRTC] Peer ${peerId} connectionState: ${pc.connectionState}`);
       if (this.callbacks.onPeerConnectionState) {
         this.callbacks.onPeerConnectionState(peerId, pc.connectionState);
       }
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        this.closePeer(peerId);
+      if (pc.connectionState === 'failed') {
+        console.warn(`[WAVE WebRTC] Peer ${peerId} connection failed, attempting ICE restart`);
+        pc.restartIce?.();
       }
     };
 
     pc.ontrack = (event) => {
+      console.log(`[WAVE WebRTC] Received remote audio track from ${peerId}`);
       const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
       this.attachRemoteAudio(peerId, stream);
     };
-
-    // Add local track if already acquired
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach((track) => {
-        try {
-          const senders = pc.getSenders();
-          const audioSender = senders.find((s) => s.track?.kind === 'audio');
-          if (audioSender) {
-            audioSender.replaceTrack(track).catch(() => {});
-          } else {
-            pc.addTrack(track, this.localStream!);
-          }
-        } catch {}
-      });
-    }
 
     this.peerConnections.set(peerId, pc);
     return pc;
@@ -385,34 +413,44 @@ export class VoiceManager {
     if (typeof window === 'undefined') return;
     let audioEl = this.remoteAudioElements.get(peerId);
     if (!audioEl) {
-      audioEl = new Audio();
+      audioEl = document.createElement('audio');
+      audioEl.id = `remote-audio-${peerId}`;
       audioEl.autoplay = true;
       (audioEl as any).playsInline = true;
       audioEl.volume = 1.0;
+      audioEl.style.position = 'fixed';
+      audioEl.style.pointerEvents = 'none';
+      audioEl.style.opacity = '0';
+      audioEl.style.width = '1px';
+      audioEl.style.height = '1px';
+      audioEl.style.bottom = '0';
+      document.body.appendChild(audioEl);
       this.remoteAudioElements.set(peerId, audioEl);
     }
-    audioEl.srcObject = stream;
+
+    if (audioEl.srcObject !== stream) {
+      audioEl.srcObject = stream;
+    }
 
     const tryPlay = () => {
       if (audioEl) {
-        audioEl.play().catch(() => {
-          // Autoplay policy: unlock on first window interaction
+        audioEl.play().catch((err) => {
+          console.log('[WAVE WebRTC] Playback waiting for interaction:', err?.message || err);
           const unlock = () => {
             audioEl?.play().catch(() => {});
             window.removeEventListener('click', unlock);
-            window.removeEventListener('keydown', unlock);
             window.removeEventListener('touchstart', unlock);
+            window.removeEventListener('keydown', unlock);
           };
           window.addEventListener('click', unlock, { once: true });
-          window.addEventListener('keydown', unlock, { once: true });
           window.addEventListener('touchstart', unlock, { once: true });
+          window.addEventListener('keydown', unlock, { once: true });
         });
       }
     };
 
     tryPlay();
   }
-
 
   public async createOffer(peerId: string, onIceCandidate: (c: RTCIceCandidate) => void): Promise<RTCSessionDescriptionInit> {
     const pc = this.createPeerConnection(peerId, onIceCandidate);
@@ -431,6 +469,7 @@ export class VoiceManager {
   ): Promise<RTCSessionDescriptionInit> {
     const pc = this.createPeerConnection(peerId, onIceCandidate);
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    await this.flushPendingCandidates(peerId, pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     return answer;
@@ -440,17 +479,37 @@ export class VoiceManager {
     const pc = this.peerConnections.get(peerId);
     if (pc && pc.signalingState !== 'stable') {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      await this.flushPendingCandidates(peerId, pc);
     }
   }
 
   public async handleCandidate(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
     const pc = this.peerConnections.get(peerId);
-    if (pc) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.warn('[WAVE] Error adding ICE candidate:', err);
+    if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+      const list = this.pendingCandidates.get(peerId) || [];
+      list.push(candidate);
+      this.pendingCandidates.set(peerId, list);
+      return;
+    }
+
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.warn('[WAVE WebRTC] Candidate error:', err);
+    }
+  }
+
+  private async flushPendingCandidates(peerId: string, pc: RTCPeerConnection) {
+    const pending = this.pendingCandidates.get(peerId);
+    if (pending && pending.length > 0) {
+      for (const cand of pending) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('[WAVE WebRTC] Failed to add buffered candidate:', e);
+        }
       }
+      this.pendingCandidates.delete(peerId);
     }
   }
 
@@ -463,9 +522,12 @@ export class VoiceManager {
     const audioEl = this.remoteAudioElements.get(peerId);
     if (audioEl) {
       audioEl.srcObject = null;
-      audioEl.remove();
+      if (audioEl.parentNode) {
+        audioEl.parentNode.removeChild(audioEl);
+      }
       this.remoteAudioElements.delete(peerId);
     }
+    this.pendingCandidates.delete(peerId);
   }
 
   /**
