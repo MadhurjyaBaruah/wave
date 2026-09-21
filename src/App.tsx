@@ -366,6 +366,9 @@ export default function App() {
       },
       onSpeakerActive: (speaker) => {
         setActiveSpeaker(speaker);
+        if (speaker && voiceManagerRef.current && speaker.userId !== currentUser?.id) {
+          voiceManagerRef.current.ensureRemoteAudioPlaying();
+        }
       },
       onSignalMessage: async (msg) => {
         if (!voiceManagerRef.current || !msg.from_user_id) return;

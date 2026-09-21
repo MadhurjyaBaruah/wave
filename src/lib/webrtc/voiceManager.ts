@@ -35,6 +35,8 @@ export class VoiceManager {
         'stun:stun3.l.google.com:19302',
         'stun:stun4.l.google.com:19302',
         'stun:stun.cloudflare.com:3478',
+        'stun:stun.services.mozilla.com',
+        'stun:stun.sipgate.net:10000',
       ],
     },
   ];
@@ -316,8 +318,16 @@ export class VoiceManager {
     // Seamlessly swap live audio track into pre-negotiated RTP senders (zero SDP renegotiation required)
     if (localTrack) {
       this.peerConnections.forEach((pc) => {
+        const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+        const audioTransceiver = transceivers.find(
+          (t) => (t.sender && t.sender.track?.kind === 'audio') || t.receiver?.track?.kind === 'audio'
+        );
         const senders = pc.getSenders();
-        const audioSender = senders.find((s) => s.track?.kind === 'audio' || (s as any).kind === 'audio') || senders[0];
+        const audioSender =
+          audioTransceiver?.sender ||
+          senders.find((s) => s.track?.kind === 'audio' || (s as any).kind === 'audio') ||
+          senders[0];
+
         if (audioSender) {
           audioSender.replaceTrack(localTrack).catch((e) => {
             console.warn('[WAVE WebRTC] replaceTrack error:', e);
@@ -356,6 +366,24 @@ export class VoiceManager {
   }
 
   /**
+   * Immediately resumes and plays all remote audio elements when an operator begins transmitting
+   */
+  public ensureRemoteAudioPlaying() {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {});
+    }
+    this.remoteAudioElements.forEach((audioEl) => {
+      if (audioEl) {
+        audioEl.muted = false;
+        audioEl.volume = 1.0;
+        if (audioEl.paused) {
+          audioEl.play().catch(() => {});
+        }
+      }
+    });
+  }
+
+  /**
    * Create or get RTCPeerConnection for a remote peer with pre-negotiated audio track
    */
   public createPeerConnection(
@@ -369,16 +397,25 @@ export class VoiceManager {
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     // Pre-negotiate two-way audio transceiver with an active track from the start
-    let initialTrack = this.localStream ? this.localStream.getAudioTracks()[0] : null;
+    let initialStream = this.localStream;
+    let initialTrack = initialStream ? initialStream.getAudioTracks()[0] : null;
     if (!initialTrack) {
       initialTrack = this.createSilentAudioTrack();
+      initialStream = new MediaStream([initialTrack]);
     }
 
     try {
-      pc.addTransceiver(initialTrack, { direction: 'sendrecv' });
+      pc.addTransceiver(initialTrack, {
+        direction: 'sendrecv',
+        streams: initialStream ? [initialStream] : [],
+      });
     } catch {
       try {
-        pc.addTrack(initialTrack);
+        if (initialStream) {
+          pc.addTrack(initialTrack, initialStream);
+        } else {
+          pc.addTrack(initialTrack);
+        }
       } catch {}
     }
 
@@ -417,6 +454,7 @@ export class VoiceManager {
       audioEl.id = `remote-audio-${peerId}`;
       audioEl.autoplay = true;
       (audioEl as any).playsInline = true;
+      audioEl.muted = false;
       audioEl.volume = 1.0;
       audioEl.style.position = 'fixed';
       audioEl.style.pointerEvents = 'none';
@@ -428,16 +466,25 @@ export class VoiceManager {
       this.remoteAudioElements.set(peerId, audioEl);
     }
 
+    audioEl.muted = false;
+    audioEl.volume = 1.0;
+
     if (audioEl.srcObject !== stream) {
       audioEl.srcObject = stream;
     }
 
     const tryPlay = () => {
       if (audioEl) {
+        audioEl.muted = false;
+        audioEl.volume = 1.0;
         audioEl.play().catch((err) => {
           console.log('[WAVE WebRTC] Playback waiting for interaction:', err?.message || err);
           const unlock = () => {
-            audioEl?.play().catch(() => {});
+            if (audioEl) {
+              audioEl.muted = false;
+              audioEl.volume = 1.0;
+              audioEl.play().catch(() => {});
+            }
             window.removeEventListener('click', unlock);
             window.removeEventListener('touchstart', unlock);
             window.removeEventListener('keydown', unlock);
@@ -450,6 +497,14 @@ export class VoiceManager {
     };
 
     tryPlay();
+
+    // Re-trigger play when tracks unmute (RTP media packets start arriving)
+    stream.getAudioTracks().forEach((track) => {
+      track.onunmute = () => {
+        console.log(`[WAVE WebRTC] Remote track unmuted from ${peerId}`);
+        tryPlay();
+      };
+    });
   }
 
   public async createOffer(peerId: string, onIceCandidate: (c: RTCIceCandidate) => void): Promise<RTCSessionDescriptionInit> {
