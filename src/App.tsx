@@ -552,7 +552,7 @@ export default function App() {
   const currentUserRole: ServerRole = isOwner ? 'OWNER' : (currentMember?.role || 'MEMBER');
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#F5F2E8] text-[#0A0A0A] font-mono overflow-hidden">
+    <div className="flex flex-col h-[100dvh] w-full max-w-[100vw] bg-[#F5F2E8] text-[#0A0A0A] font-mono overflow-hidden">
       {view === 'landing' ? (
         <div className="w-full h-full overflow-y-auto">
           <LandingPage
@@ -570,11 +570,11 @@ export default function App() {
       ) : (
         <div className="flex flex-col w-full h-full overflow-hidden">
           {/* Geometric Balance Top Header */}
-          <header className="h-16 border-b-4 border-[#0A0A0A] bg-[#FFFFFF] flex items-center justify-between px-6 shrink-0 z-20">
-            <div className="flex items-center gap-4">
+          <header className="h-14 sm:h-16 border-b-3 sm:border-b-4 border-[#0A0A0A] bg-[#FFFFFF] flex items-center justify-between px-3 sm:px-6 shrink-0 z-20 gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
               <button
                 onClick={() => setView('landing')}
-                className="bg-[#0A0A0A] text-[#39FF14] px-3 py-1 text-xl sm:text-2xl font-pixel font-bold tracking-tighter cursor-pointer hover:bg-[#1f1f1f] active:translate-y-0.5 border-2 border-[#0A0A0A]"
+                className="bg-[#0A0A0A] text-[#39FF14] px-2.5 sm:px-3 py-1 text-base sm:text-2xl font-pixel font-bold tracking-tighter cursor-pointer hover:bg-[#1f1f1f] active:translate-y-0.5 border-2 border-[#0A0A0A] shrink-0"
                 title="WAVE Home"
               >
                 WAVE // 104.7
@@ -588,20 +588,20 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4 sm:gap-6">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:gap-6 min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <div
-                  className={`w-3 h-3 border border-[#0A0A0A] shadow-[1px_1px_0px_#0A0A0A] ${
+                  className={`w-2.5 h-2.5 sm:w-3 sm:h-3 border border-[#0A0A0A] shadow-[1px_1px_0px_#0A0A0A] shrink-0 ${
                     isSignalingConnected ? 'bg-[#39FF14]' : 'bg-[#FFD400]'
                   }`}
                 />
-                <span className="text-xs font-bold uppercase tracking-widest truncate max-w-[160px] sm:max-w-none text-[#0A0A0A]">
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-widest truncate max-w-[100px] xs:max-w-[150px] sm:max-w-none text-[#0A0A0A]">
                   CONNECTED // {currentUser.username.toUpperCase()}
                 </span>
               </div>
               <button
                 onClick={() => setIsProfileOpen(true)}
-                className="h-8 w-8 bg-[#FFD400] border-2 border-[#0A0A0A] flex items-center justify-center font-bold text-xs shadow-[2px_2px_0px_#0A0A0A] cursor-pointer hover:bg-[#ffe033] active:translate-y-0.5"
+                className="h-7 w-7 sm:h-8 sm:w-8 bg-[#FFD400] border-2 border-[#0A0A0A] flex items-center justify-center font-bold text-xs shadow-[2px_2px_0px_#0A0A0A] cursor-pointer hover:bg-[#ffe033] active:translate-y-0.5 shrink-0"
                 title="Operator Profile"
               >
                 ?
@@ -625,6 +625,14 @@ export default function App() {
               onReturnHome={() => setView('landing')}
             />
 
+            {/* Mobile Backdrop for Channel Sidebar Drawer */}
+            {isMobileSidebarOpen && (
+              <div
+                className="md:hidden fixed inset-0 bg-[#0A0A0A]/50 z-30 backdrop-blur-[1px]"
+                onClick={() => setIsMobileSidebarOpen(false)}
+              />
+            )}
+
             {/* Channel Sidebar */}
             {activeServer ? (
               <ChannelSidebar
@@ -639,6 +647,7 @@ export default function App() {
                 onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenInvite={() => setIsInviteOpen(true)}
+                onCloseMobile={() => setIsMobileSidebarOpen(false)}
                 onLeaveServer={async () => {
                   if (!activeServer || !currentUser) return;
                   const serverToLeave = activeServer;
@@ -672,7 +681,7 @@ export default function App() {
 
                 className={`${
                   isMobileSidebarOpen
-                    ? 'absolute inset-y-0 left-[72px] z-40 flex'
+                    ? 'absolute inset-y-0 left-14 sm:left-16 md:left-[72px] z-40 flex shadow-[4px_0px_0px_#0A0A0A]'
                     : 'hidden md:flex'
                 }`}
               />

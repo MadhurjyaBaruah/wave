@@ -119,11 +119,11 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
     >
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Navigation Tabs */}
-        <div className="sm:w-48 flex sm:flex-col gap-1 border-b sm:border-b-0 sm:border-r-2 border-[#0A0A0A] pb-3 sm:pb-0 sm:pr-3">
+        <div className="sm:w-44 flex sm:flex-col gap-1 border-b sm:border-b-0 sm:border-r-2 border-[#0A0A0A] pb-2 sm:pb-0 sm:pr-3 overflow-x-auto no-scrollbar shrink-0">
           <button
             type="button"
             onClick={() => setTab('general')}
-            className={`p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer ${
+            className={`p-2 sm:p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               tab === 'general'
                 ? 'bg-[#0A0A0A] text-[#FFFFFF] border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]'
                 : 'border-transparent text-[#0A0A0A] hover:bg-[#F5F2E8]'
@@ -134,7 +134,7 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => setTab('channels')}
-            className={`p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer ${
+            className={`p-2 sm:p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               tab === 'channels'
                 ? 'bg-[#0A0A0A] text-[#FFFFFF] border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]'
                 : 'border-transparent text-[#0A0A0A] hover:bg-[#F5F2E8]'
@@ -145,7 +145,7 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => setTab('members')}
-            className={`p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer ${
+            className={`p-2 sm:p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               tab === 'members'
                 ? 'bg-[#0A0A0A] text-[#FFFFFF] border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]'
                 : 'border-transparent text-[#0A0A0A] hover:bg-[#F5F2E8]'
@@ -156,7 +156,7 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => setTab('invite')}
-            className={`p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer ${
+            className={`p-2 sm:p-2.5 text-left text-xs font-bold uppercase border-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               tab === 'invite'
                 ? 'bg-[#0A0A0A] text-[#FFFFFF] border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]'
                 : 'border-transparent text-[#0A0A0A] hover:bg-[#F5F2E8]'
@@ -297,17 +297,17 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
                   return (
                     <div
                       key={m.user_id}
-                      className="flex items-center justify-between p-2.5 bg-[#F5F2E8] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A]"
+                      className="flex flex-wrap sm:flex-nowrap items-center justify-between p-2 sm:p-2.5 bg-[#F5F2E8] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] gap-2"
                     >
-                      <div className="flex items-center gap-2 text-xs font-mono">
-                        <Users size={14} className="text-[#3B82F6]" />
-                        <span className="font-bold text-[#0A0A0A]">
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-mono min-w-0 truncate">
+                        <Users size={14} className="text-[#3B82F6] shrink-0" />
+                        <span className="font-bold text-[#0A0A0A] truncate">
                           {m.profile?.display_name || m.profile?.username || 'Operator'}
                         </span>
                         {isSelf && (
-                          <span className="text-[10px] text-[#0A0A0A] font-black underline">(YOU)</span>
+                          <span className="text-[10px] text-[#0A0A0A] font-black shrink-0 underline">(YOU)</span>
                         )}
-                        <span className="text-[10px] px-1.5 py-0.5 border border-[#0A0A0A] bg-[#FFFFFF] font-bold text-[#0A0A0A]">
+                        <span className="text-[10px] px-1.5 py-0.5 border border-[#0A0A0A] bg-[#FFFFFF] font-bold text-[#0A0A0A] shrink-0">
                           {m.role}
                         </span>
                       </div>
@@ -315,7 +315,7 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
                       {(isOwner || isAdmin) && !isSelf && !isTargetOwner && (
                         <button
                           onClick={() => handleKickMember(m.user_id)}
-                          className="px-2 py-0.5 text-xs text-[#FF304F] border-2 border-[#FF304F] hover:bg-[#FF304F] hover:text-[#FFFFFF] font-bold cursor-pointer transition-colors"
+                          className="px-2 py-0.5 text-xs text-[#FF304F] border-2 border-[#FF304F] hover:bg-[#FF304F] hover:text-[#FFFFFF] font-bold cursor-pointer transition-colors shrink-0 ml-auto"
                         >
                           REMOVE
                         </button>
@@ -333,17 +333,17 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
                 Share this invite code with other operators to let them join your server:
               </div>
 
-              <div className="p-6 bg-[#F5F2E8] border-4 border-[#0A0A0A] shadow-[6px_6px_0px_#0A0A0A] flex flex-col items-center justify-center gap-3">
+              <div className="p-4 sm:p-6 bg-[#F5F2E8] border-4 border-[#0A0A0A] shadow-[4px_4px_0px_#0A0A0A] sm:shadow-[6px_6px_0px_#0A0A0A] flex flex-col items-center justify-center gap-3">
                 <span className="text-xs text-[#0A0A0A]/70 font-mono font-bold uppercase">
                   TACTICAL INVITE CODE
                 </span>
-                <span className="font-pixel text-3xl tracking-widest text-[#0A0A0A] font-black">
+                <span className="font-pixel text-xl sm:text-3xl tracking-widest text-[#0A0A0A] font-black break-all text-center">
                   {server.invite_code}
                 </span>
                 <button
                   type="button"
                   onClick={copyInvite}
-                  className="mt-2 retro-btn retro-btn-green px-5 py-2 text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#0A0A0A] active:translate-y-0.5"
+                  className="mt-2 retro-btn retro-btn-green px-4 sm:px-5 py-2 text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#0A0A0A] active:translate-y-0.5"
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copied ? 'CODE COPIED!' : 'COPY INVITE CODE'}</span>

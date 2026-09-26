@@ -175,20 +175,20 @@ export const PushToTalkButton: React.FC<PushToTalkButtonProps> = ({
             stopTransmittingAction();
           }
         }}
-        className={`group relative w-48 h-48 md:w-52 md:h-52 rounded-full border-8 border-[#0A0A0A] ${buttonBg} ${buttonShadow} flex flex-col items-center justify-center cursor-pointer transition-all duration-75 active:translate-y-2 active:shadow-[0_2px_0_#0A0A0A] focus:outline-none`}
+        className={`group relative w-36 h-36 xs:w-44 xs:h-44 sm:w-48 sm:h-48 md:w-52 md:h-52 rounded-full border-4 sm:border-8 border-[#0A0A0A] ${buttonBg} ${buttonShadow} flex flex-col items-center justify-center cursor-pointer transition-all duration-75 active:translate-y-2 active:shadow-[0_2px_0_#0A0A0A] focus:outline-none touch-none shrink-0`}
       >
         {/* Inner Circular Well */}
-        <div className={`w-14 h-14 ${iconBg} rounded-full mb-2 flex items-center justify-center border-2 border-[#0A0A0A] shadow-[1px_1px_0px_#0A0A0A]`}>
+        <div className={`w-10 h-10 xs:w-12 xs:h-12 sm:w-14 sm:h-14 ${iconBg} rounded-full mb-1.5 sm:mb-2 flex items-center justify-center border-2 border-[#0A0A0A] shadow-[1px_1px_0px_#0A0A0A]`}>
           {iconComponent}
         </div>
 
         {/* Primary Action Label */}
-        <span className={`font-pixel font-bold text-xs uppercase tracking-tighter ${buttonText} text-center px-2 leading-tight`}>
+        <span className={`font-pixel font-bold text-[10px] xs:text-xs uppercase tracking-tighter ${buttonText} text-center px-2 leading-tight max-w-[130px] xs:max-w-[160px] truncate`}>
           {buttonStatusText}
         </span>
 
         {/* Tactical Key Sub-label */}
-        <span className={`font-mono text-[9px] font-bold mt-1 uppercase tracking-widest ${isTransmitting ? 'text-white/80' : 'text-[#0A0A0A]/60'}`}>
+        <span className={`font-mono text-[8px] xs:text-[9px] font-bold mt-0.5 sm:mt-1 uppercase tracking-widest ${isTransmitting ? 'text-white/80' : 'text-[#0A0A0A]/60'}`}>
           {buttonSubText}
         </span>
       </button>

@@ -1,14 +1,50 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
+  html, body {
+    height: 100%;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 100vw;
     background-color: #F5F2E8;
     color: #0A0A0A;
     font-family: 'Space Mono', monospace;
     overflow-x: hidden;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
+
+  #root {
+    height: 100%;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+}
+
+/* Tactical retro custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F2E8;
+}
+::-webkit-scrollbar-thumb {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #39FF14;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .font-pixel {

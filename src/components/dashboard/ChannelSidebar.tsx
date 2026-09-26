@@ -1,6 +1,6 @@
 import React from 'react';
 import { Server, Channel, ServerRole } from '../../types/database';
-import { Hash, Lock, Plus, Settings, UserPlus, LogOut, Copy, Check } from 'lucide-react';
+import { Hash, Lock, Plus, Settings, UserPlus, LogOut, Copy, Check, X } from 'lucide-react';
 
 interface ChannelSidebarProps {
   server: Server;
@@ -12,6 +12,7 @@ interface ChannelSidebarProps {
   onOpenSettings: () => void;
   onOpenInvite: () => void;
   onLeaveServer: () => void;
+  onCloseMobile?: () => void;
   className?: string;
 }
 
@@ -25,6 +26,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onOpenSettings,
   onOpenInvite,
   onLeaveServer,
+  onCloseMobile,
   className = '',
 }) => {
   const [copied, setCopied] = React.useState(false);
@@ -40,13 +42,13 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
   return (
     <aside
-      className={`w-64 border-r-4 border-[#0A0A0A] bg-[#FFFFFF] flex flex-col justify-between select-none ${className}`}
+      className={`w-64 max-w-[calc(100vw-4rem)] border-r-3 sm:border-r-4 border-[#0A0A0A] bg-[#FFFFFF] flex flex-col justify-between select-none shadow-[4px_0px_0px_#0A0A0A] md:shadow-none ${className}`}
     >
       {/* Top Header & Channels */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Server Title Header */}
-        <div className="p-4 border-b-2 border-[#0A0A0A] bg-[#F5F2E8] flex items-center justify-between">
-          <div className="overflow-hidden pr-2">
+        <div className="p-3 sm:p-4 border-b-2 border-[#0A0A0A] bg-[#F5F2E8] flex items-center justify-between gap-2">
+          <div className="overflow-hidden pr-1 min-w-0">
             <div className="font-bold text-xs tracking-widest uppercase text-[#0A0A0A] truncate">
               CHANNELS // {server.name}
             </div>
@@ -55,16 +57,27 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             </div>
           </div>
 
-          {isOwnerOrAdmin && (
-            <button
-              onClick={onOpenSettings}
-              id="channel-sidebar-settings-btn"
-              title="Server Settings"
-              className="p-1 bg-[#FFFFFF] text-[#0A0A0A] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] hover:bg-[#F5F2E8] cursor-pointer active:translate-y-0.5"
-            >
-              <Settings size={14} />
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isOwnerOrAdmin && (
+              <button
+                onClick={onOpenSettings}
+                id="channel-sidebar-settings-btn"
+                title="Server Settings"
+                className="p-1 bg-[#FFFFFF] text-[#0A0A0A] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] hover:bg-[#F5F2E8] cursor-pointer active:translate-y-0.5"
+              >
+                <Settings size={14} />
+              </button>
+            )}
+            {onCloseMobile && (
+              <button
+                onClick={onCloseMobile}
+                title="Close Sidebar"
+                className="md:hidden p-1 bg-[#FFFFFF] text-[#0A0A0A] hover:bg-[#FF304F] hover:text-[#FFFFFF] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] cursor-pointer active:translate-y-0.5"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Channels List */}

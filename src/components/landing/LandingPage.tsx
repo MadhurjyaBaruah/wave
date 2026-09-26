@@ -16,21 +16,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   return (
     <div className="min-h-screen bg-[#F5F2E8] text-[#0A0A0A] font-mono selection:bg-[#39FF14] selection:text-black">
       {/* Top Header */}
-      <header className="border-b-4 border-[#0A0A0A] bg-[#FFFFFF] sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
+      <header className="border-b-3 sm:border-b-4 border-[#0A0A0A] bg-[#FFFFFF] sticky top-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
         <WaveLogo size="md" showTagline />
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             onClick={onOpenJoinServer}
             id="landing-header-join-btn"
-            className="retro-btn px-4 py-2 text-xs font-bold"
+            className="retro-btn px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold"
           >
             JOIN SERVER
           </button>
           <button
             onClick={onEnterDashboard}
             id="landing-header-enter-btn"
-            className="retro-btn retro-btn-green px-4 py-2 text-xs font-black"
+            className="retro-btn retro-btn-green px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-black"
           >
             LAUNCH APP
           </button>
@@ -38,49 +38,49 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       </header>
 
       {/* Main Hero Container */}
-      <section className="max-w-6xl mx-auto px-6 pt-12 pb-16">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-12 pb-10 sm:pb-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           {/* Left Column: Typography & Call To Actions */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#FFFFFF] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] text-[#0A0A0A] text-xs font-bold font-mono">
+          <div className="lg:col-span-7 space-y-4 sm:space-y-6">
+            <div className="inline-flex items-center gap-2 px-2.5 sm:px-3 py-1 bg-[#FFFFFF] border-2 border-[#0A0A0A] shadow-[2px_2px_0px_#0A0A0A] text-[#0A0A0A] text-[10px] sm:text-xs font-bold font-mono">
               <span className="w-2.5 h-2.5 bg-[#39FF14] border border-[#0A0A0A]" />
               <span>COMMUNICATION FREQUENCY // 104.7 MHZ</span>
             </div>
 
-            <div className="space-y-3">
-              <h1 className="font-pixel text-5xl sm:text-6xl md:text-7xl font-black tracking-tight text-[#0A0A0A] leading-none">
+            <div className="space-y-2 sm:space-y-3">
+              <h1 className="font-pixel text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-[#0A0A0A] leading-none">
                 WAVE
               </h1>
-              <p className="font-pixel text-xl sm:text-2xl text-[#0A0A0A] font-bold tracking-wide">
+              <p className="font-pixel text-base sm:text-xl md:text-2xl text-[#0A0A0A] font-bold tracking-wide">
                 YOUR INTERNET WALKIE-TALKIE.
               </p>
             </div>
 
-            <div className="p-5 bg-[#FFFFFF] border-4 border-[#0A0A0A] shadow-[6px_6px_0px_#0A0A0A]">
-              <p className="font-mono text-xl text-[#0A0A0A] tracking-widest font-black uppercase">
+            <div className="p-4 sm:p-5 bg-[#FFFFFF] border-3 sm:border-4 border-[#0A0A0A] shadow-[4px_4px_0px_#0A0A0A] sm:shadow-[6px_6px_0px_#0A0A0A]">
+              <p className="font-mono text-lg sm:text-xl text-[#0A0A0A] tracking-widest font-black uppercase">
                 Press. <span className="text-[#FF304F]">Talk.</span> Release.
               </p>
-              <p className="text-sm text-[#0A0A0A]/80 mt-2 font-bold leading-relaxed">
+              <p className="text-xs sm:text-sm text-[#0A0A0A]/80 mt-2 font-bold leading-relaxed">
                 Instant, low-latency audio transmission directly inside your browser. No bloated bloatware. One speaker at a time. Pure tactical clarity.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-4 pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-2">
               <button
                 onClick={onOpenCreateServer}
                 id="hero-create-server-btn"
-                className="retro-btn retro-btn-green px-6 py-3.5 text-sm md:text-base font-black flex items-center gap-2 shadow-[4px_4px_0px_#0A0A0A] active:translate-y-1"
+                className="retro-btn retro-btn-green px-5 sm:px-6 py-3 sm:py-3.5 text-xs sm:text-sm md:text-base font-black flex items-center justify-center gap-2 shadow-[3px_3px_0px_#0A0A0A] sm:shadow-[4px_4px_0px_#0A0A0A] active:translate-y-1"
               >
-                <Radio className="w-5 h-5" />
+                <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>CREATE A SERVER</span>
               </button>
 
               <button
                 onClick={onOpenJoinServer}
                 id="hero-join-server-btn"
-                className="retro-btn px-6 py-3.5 text-sm md:text-base font-black flex items-center gap-2 shadow-[4px_4px_0px_#0A0A0A] active:translate-y-1"
+                className="retro-btn px-5 sm:px-6 py-3 sm:py-3.5 text-xs sm:text-sm md:text-base font-black flex items-center justify-center gap-2 shadow-[3px_3px_0px_#0A0A0A] sm:shadow-[4px_4px_0px_#0A0A0A] active:translate-y-1"
               >
-                <ArrowRight className="w-5 h-5" />
+                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>JOIN BY INVITE CODE</span>
               </button>
             </div>
@@ -88,7 +88,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
           {/* Right Column: Physical Walkie-Talkie Visual Mockup */}
           <div className="lg:col-span-5 flex justify-center">
-            <div className="w-full max-w-sm bg-[#FFFFFF] border-4 border-[#0A0A0A] p-6 shadow-[8px_8px_0px_#0A0A0A] relative">
+            <div className="w-full max-w-[280px] xs:max-w-xs sm:max-w-sm bg-[#FFFFFF] border-3 sm:border-4 border-[#0A0A0A] p-4 sm:p-6 shadow-[6px_6px_0px_#0A0A0A] sm:shadow-[8px_8px_0px_#0A0A0A] relative">
               {/* Top Antenna */}
               <div className="absolute -top-8 left-8 w-4 h-8 bg-[#0A0A0A] border-2 border-[#0A0A0A] flex items-center justify-center">
                 <div className="w-1.5 h-full bg-[#FFFFFF]" />
